@@ -139,15 +139,34 @@ Stack the top cube onto the bottom cube.
 ### 5.3 `TeleopDevice` (abstract)
 - Interface: `read() -> (action[dx,dy,dz,gripper], intervene: bool, done: bool)`.
 - `SpaceMouseDevice` (pyspacemouse / hidapi): `intervene=True` when the puck exceeds a
-  deadband or a hold-button is pressed.
-- `ViveDevice` (France): subscribe to the hucebot Vive pose topics, compute EE delta,
-  trigger = intervene/clutch. Same interface → zero collector changes.
+  deadband or a hold-button is pressed. Mirror the Vive driver's clutch + delta-translation
+  semantics so behavior is identical across labs.
+- `ViveDevice` (France): subscribe to **hucebot/vive_controller**
+  (https://github.com/hucebot/vive_controller). It already publishes
+  `/vive/right/pose` (`geometry_msgs/PoseStamped`) and `/vive/right/joint_states`
+  (trigger 0-1, grip, trackpad, menu), ships a **clutch-based Teleop Bridge** (delta
+  translation + mirrored rotation, axis alignment, linear scaling), has **explicit
+  Franka support** (`make franka`), and is Dockerized. `ViveDevice` is therefore a thin
+  subscriber, and the **clutch/trigger maps directly to MILE's intervention flag ν**.
+  Same `TeleopDevice` interface → zero collector changes. This de-risks the France side:
+  hucebot already maintains the teleop driver.
 
 ### 5.4 `ObjectPoseSource` (abstract)
 - `MujocoGtPoseSource` (sim): read body poses from the sim state.
 - `AprilTagPoseSource` (real): `apriltag_ros` / pupil-apriltags, camera intrinsics +
   hand-eye extrinsics; pose used pre-grasp, then grasp-transform after grasp.
-- `FoundationPosePoseSource` (optional stretch): RGB-D + CAD + segmentation init.
+  **Primary choice for stacking**: cubes are textureless + symmetric (a near-worst case
+  for appearance-based pose tracking), so a fiducial is more robust and far simpler.
+- `FoundationPosePoseSource` (optional, markerless upgrade for a *later, textured*
+  task): use **hucebot/FoundationPoseNode**
+  (https://github.com/hucebot/FoundationPoseNode), hucebot's own ROS2 wrapper
+  (YOLO/SAM3 + FoundationPose) that publishes 6-DoF `PoseStamped` — same message type
+  as the AprilTag source, so it drops into this abstraction unchanged. Needs GPU+CUDA,
+  RGB-D (RealSense), and a `.obj` mesh. Low-friction in France because hucebot maintains
+  it, but **not used for the cube-stacking tutorial** (overkill and ill-suited to plain
+  cubes).
+- Both real sources publish `PoseStamped`, confirming the abstraction: in France we point
+  `ObjectPoseSource` at whichever hucebot node is running.
 - Object nominal dimensions live in **one shared config** so sim MJCF and real cubes stay
   consistent.
 
