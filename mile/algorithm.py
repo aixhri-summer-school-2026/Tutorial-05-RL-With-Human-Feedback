@@ -183,8 +183,10 @@ class InterventionTrainer:
 
         self.score_window = deque(maxlen=100)
         self.init_policy = deepcopy(self.policy)
-        self.score_window, init_success_rate = generate_rollout(self.policy, self.env, env_name=self.env_name, scores_window=self.score_window)
-        self.logger.log_rollout(success_rate=init_success_rate, init_success_rate=init_success_rate)
+        self.auto_eval = config['experiment'].get('rollout', {}).get('auto_eval', True)
+        if self.auto_eval:
+            self.score_window, init_success_rate = generate_rollout(self.policy, self.env, env_name=self.env_name, scores_window=self.score_window)
+            self.logger.log_rollout(success_rate=init_success_rate, init_success_rate=init_success_rate)
 
     def _train_one_epoch(self, dataloader):
         self.policy.train()
@@ -319,6 +321,8 @@ class InterventionTrainer:
     
     def train(self, train_dataloader: DataLoader, val_dataloader: DataLoader, round: Optional[int]=None):
         best_success_rate = 0
+        best_policy = None
+        best_mental_model = None
         for epoch in range(1, self.num_epochs+1):
             validation_metrics = None
             success_rate = None
@@ -327,7 +331,7 @@ class InterventionTrainer:
             if self.experiment_config['validate']['enabled']:
                 if epoch % self.experiment_config['validate']['every_n_epochs'] == 0 or epoch == self.num_epochs:
                     validation_metrics = self._validate_one_epoch(val_dataloader)
-            if self.experiment_config['rollout']['enabled']:
+            if self.experiment_config['rollout']['enabled'] and self.auto_eval:
                 if epoch % self.experiment_config['rollout']['every_n_epochs'] == 0 or epoch == self.num_epochs:
                     self.scores_window, success_rate = generate_rollout(self.policy, 
                                                                         self.env, 
@@ -358,7 +362,7 @@ class InterventionTrainer:
         if self.experiment_config['save']['enabled']:
             self.policy.save(self.experiment_config['save']['outdir']+'/policy')
             self.mental_model.save(self.experiment_config['save']['outdir']+'/mental_model')
-            if self.experiment_config['save']['on_best_rollout_success_rate']:
+            if self.experiment_config['save']['on_best_rollout_success_rate'] and best_policy is not None:
                 best_policy.save(self.experiment_config['save']['outdir']+'/best_policy')
                 best_mental_model.save(self.experiment_config['save']['outdir']+'/best_mental_model')
             with open(self.experiment_config['save']['outdir']+'/config.pkl', 'wb') as f:
