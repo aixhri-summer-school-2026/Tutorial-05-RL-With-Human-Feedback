@@ -31,10 +31,10 @@ class ScriptedPolicyConfig:
     pos_tol: float = 0.012            # within this of a sub-target -> advance phase
     dwell_steps: int = 3              # steps to hold while grasping/releasing
     # Mediocre knobs (ignored when mediocre=False):
-    aim_xy_bias: float = 0.015        # constant horizontal placement bias (m)
-    aim_xy_noise_std: float = 0.020   # per-episode random horizontal offset std (m)
-    action_noise_std: float = 0.05    # gaussian noise on the [-1,1] action
-    release_height_error: float = 0.015  # release this much too high (m)
+    aim_xy_bias: float = 0.0          # constant horizontal placement bias (m)
+    aim_xy_noise_std: float = 0.015   # per-episode random horizontal offset std (m)
+    action_noise_std: float = 0.04    # gaussian noise on the [-1,1] action
+    release_height_error: float = 0.010  # release this much too high (m)
 
 
 class ScriptedStackPolicy:
