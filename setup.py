@@ -1,3 +1,7 @@
-from distutils.core import setup
+from setuptools import find_packages, setup
 
-setup(name="mile", version="0.0.1", packages=["mile"])
+setup(
+    name="mile",
+    version="0.0.1",
+    packages=find_packages(include=["mile", "mile.*", "mile_franka", "mile_franka.*"]),
+)
