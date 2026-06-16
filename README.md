@@ -3,9 +3,53 @@ Codebase to replicate the results for https://liralab.usc.edu/mile/.
 
 ## Setting up the environment
 - Create a new conda environment: `conda create -n mile python=3.10`
-- Install required packages: `pip install -r requirements.txt`
-- Install [Metaworld](https://github.com/Farama-Foundation/Metaworld)
-- Install MILE: `pip install -e .`
+- Install required packages: `pip install -r requirements.txt` (this also installs the v2-compatible [Metaworld](https://github.com/Farama-Foundation/Metaworld) commit; do not `pip install metaworld`, as the PyPI release is v3 and requires `gymnasium>=1.1`, which is incompatible with this stack)
+- Install MILE: `pip install -e .` (this also installs the `mile_franka` package used below)
+
+## MILE on Franka — block-stacking tutorial
+
+This fork adapts MILE to a Franka Panda block-stacking task ([design spec](docs/superpowers/specs/2026-06-15-mile-franka-stacking-design.md)). The whole pipeline runs **headless with a built-in fake backend** — no robot, no ROS, no MuJoCo, no GPU — so you can validate everything before touching hardware. The simulated/real Panda backends (multipanda_ros2 + SpaceMouse/Vive) drop into the same interfaces later.
+
+Activate the environment first (`conda activate mile`). Run all commands from the repo root.
+
+### 1. Smoke-test the environment
+
+Drives the fake `FrankaEnv` through a full pick-and-place and checks `info['success']` fires:
+
+```
+python scripts/smoke_franka_env.py          # prints: smoke_franka_env ok
+```
+
+### 2. Build the mediocre base policy
+
+Collects scripted demonstrations, BC-distills them into the `ActorCriticPolicy` MILE trains on, and reports the rollout success rate. The policy is deliberately *mediocre* (it starts the task but can't reliably finish) — that is the regime where human interventions matter.
+
+```
+python scripts/build_base_policy.py
+# -> Saved base policy to trained_models/franka/base_policy; success rate = 0.57
+```
+
+A success rate roughly in `0.3–0.7` is what you want. If it solves everything (`1.00`) or nothing (`0.00`), tune the mediocre knobs in `ScriptedPolicyConfig` (`mile_franka/policies/scripted.py`): raise/lower `aim_xy_noise_std`, `release_height_error`, `action_noise_std`.
+
+### 3. Run the iterative MILE loop (synthetic human)
+
+`config_franka.json` runs MILE's iterative loop with a **scripted "human"** (`ScriptedIntervener`) standing in for the SpaceMouse/Vive operator, autonomous on-robot rollouts disabled (`rollout.auto_eval: false`). It loads the base policy from step 2.
+
+```
+cd scripts && python train_mile.py --config ../config_franka.json && cd ..
+```
+
+You should see `Round: 0` / `Round: 1`, the dataset growing each round, and the trained policy + mental model written to `output_dir/franka/`. Increase `num_rounds` / `episodes_per_round` / `train.num_epochs` in `config_franka.json` for a real run.
+
+To use a **live SpaceMouse** instead of the scripted human, set `"intervener": "spacemouse"` in `config_franka.json` (requires `pyspacemouse` + the device attached).
+
+### Toward the real robot
+
+The real backend (hucebot's multipanda_ros2 controller docker), the MuJoCo cube assets, and the Vive/AprilTag swap are gated on hardware bring-up — see the [bring-up checklist](docs/superpowers/notes/2026-06-15-phase2-bringup-checklist.md) and resolve the `CONFIRM@bringup:` markers (`grep -rn CONFIRM@bringup mile_franka`).
+
+---
+
+The remaining sections document the **upstream MILE workflow on MetaWorld** (used for the Peg-Insert reproduction).
 
 ## Dataset generation
 You can generate a synthetic dataset of interventions using our intervention model if you have a trained agent and mental model.

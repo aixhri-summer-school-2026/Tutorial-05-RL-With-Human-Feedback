@@ -41,6 +41,7 @@ Pretrained models for the Peg-Insert reproduction: `gdown 1bzKGyOmX1ZCmAWnZiq_sA
 ## Commands
 
 ```bash
+# --- Upstream MILE on MetaWorld ---
 # Train (offline or iterative — selected by config["experiment"]["mode"])
 python scripts/train_mile.py --config config.json
 
@@ -51,10 +52,26 @@ python scripts/eval_mile.py --trained_model <dir> --num_episodes 100
 python scripts/collect_synthetic_interventions.py \
   --env_name peg-insert-side-v2 --n_episodes 20 \
   --rollout_policy <p> --intervention_policy <p> --mental_model <p> --save_path <p>
+
+# --- Franka block-stacking (headless: fake backend, no ROS/MuJoCo/GPU/hardware) ---
+python scripts/smoke_franka_env.py                 # env reset/step/success smoke test
+python scripts/build_base_policy.py                # scripted demos -> BC -> mediocre base policy (-> trained_models/franka/base_policy)
+cd scripts && python train_mile.py --config ../config_franka.json && cd ..  # iterative MILE, scripted "human"
 ```
 
-There is no test suite, linter, or build step. `config.json` is the single source of run
-configuration (env, modes, policy/mental-model types and paths, logging, save, rollout).
+The `cd scripts` is required for the Franka run: `config_franka.json` uses paths relative
+to `scripts/` (e.g. `policy_path: "../trained_models/franka/base_policy"`,
+`save.outdir: "../output_dir/franka"`), matching `build_base_policy.py`'s default save
+location. That config is the headless end-to-end gate (acceptance gate 6): `mode:
+iterative`, `collector: real` + `intervener: scripted` (the `ScriptedIntervener` stands in
+for a human, no device needed), `rollout.auto_eval: false`, `num_rounds: 2`,
+`episodes_per_round: 3`.
+
+There is no test suite, linter, or build step. The smoke scripts above are the de-facto
+tests for the Franka path; run them after touching `mile_franka/`. `config.json` /
+`config_franka.json` are the single source of run configuration (env, modes,
+policy/mental-model types and paths, logging, save, rollout, **`collector`**,
+**`intervener`**, **`rollout.auto_eval`**).
 
 ## Architecture (big picture)
 
@@ -66,18 +83,22 @@ the policy.
   action spaces, returning the intervention probability `p(ν=1|s)` and the final action
   distribution. `COST_LOOKUP` maps each env name to `[cost, cdf_scale]` hyperparameters;
   **every env used in training/collection must have an entry here or the trainer raises.**
+  The Franka task has entries for both `Franka-Stack-Fake-v0` and `Franka-Stack-Sim-v0`
+  (both `[250, 200.0]`, seeded from `pick-place-v2` and meant to be tuned on hardware).
 - **`mile/algorithm.py`** — `InterventionTrainer` jointly optimizes the **policy** `π_θ`
   and the **mental model** `π̃_ξ` (what the human believes the robot will do). Continuous
   loss = BCE on the intervention flag ν **+** Gaussian NLL of the human action *only on
   ν=1 steps* (`mile_cont_loss_fn`). `generate_rollout` runs the policy on the env to
-  measure success rate and **is called unconditionally in `__init__`** (≈line 186) — on a
-  real robot this autonomously executes the policy, so it must be guarded.
+  measure success rate; it **is now guarded behind `experiment.rollout.auto_eval`** (both
+  the `__init__` call and the in-loop calls), default `True` for MetaWorld, set `false` on
+  the Franka/real path so the policy is never executed autonomously.
 - **`scripts/train_mile.py`** — two modes. `offline`: train once on a fixed dataset.
-  `iterative`: repeat `num_rounds` × {collect data → retrain}. **In the current code the
-  "human" is fully synthetic** — `collect_synthetic_data` rolls out a `rollout_policy`,
-  decides interventions via the `computational_intervention_model` + a `gt_mental_model`,
-  and takes actions from an expert `intervention_policy`. There is **no real
-  human-in-the-loop teleoperation in this repo**; the Franka project adds it.
+  `iterative`: repeat `num_rounds` × {collect data → retrain}. The data collector is
+  selected by `experiment.collector`: `synthetic` (default) uses `collect_synthetic_data`
+  (a fully-synthetic "human" — `rollout_policy` + `computational_intervention_model` +
+  `gt_mental_model` + expert `intervention_policy`); `real` uses
+  `mile_franka.collect.Collector` with a real human-in-the-loop intervener. MetaWorld is
+  imported lazily, so the Franka path does not require it.
 - **`scripts/collect_synthetic_interventions.py`** — the synthetic data collector used by
   iterative training.
 - **`mile/utils.py`** — `prepare_dataset` (train/val split; **stacks all dict keys with
@@ -99,3 +120,38 @@ MetaWorld envs are wrapped with `FrameStack(4)` then `FlattenObservation` to ret
 temporal context; the action space is 4-DoF (xyz end-effector delta + gripper), EE
 pointing down. Policies/mental models are `ActorCriticPolicy` (`bc`) or `QNetwork`/SAC,
 net `[256, 256]`, with `NormalizeFeaturesExtractor` + `RunningNorm`.
+
+## The `mile_franka` package (Franka block-stacking)
+
+A separate package alongside `mile/` implementing the Franka adaptation. Backend-agnostic:
+the same `FrankaEnv` runs against a no-ROS fake backend (dev/CI) and the real
+multipanda_ros2 controller (sim/hardware) — only the backend and pose source swap. ROS
+deps (`rclpy`, `franka_msgs`, `geometry_msgs`) are imported **lazily**, so the package
+imports and the smoke scripts run with no ROS installed.
+
+- **`mile_franka/config.py`** — `StackTaskConfig` (cube/workspace/threshold dims shared by
+  sim and real) + `DOWN_QUAT`.
+- **`mile_franka/envs/`** — `RobotBackend` ABC (`backend.py`); `FakeWorld`/`FakeRobotBackend`/
+  `WorldPoseSource` (`fake_backend.py`, a kinematic pick-and-place world for headless runs);
+  `FrankaEnv` (`franka_env.py`, gym env: delta→Cartesian target, 18-dim obs `[ee_xyz,
+  gripper_width, top_pose(7), bottom_pose(7)]` → `(72,)` after `FrameStack(4)+Flatten`,
+  `info['success']`); `registration.py` (`register_franka_envs()`, `make_franka_env()`,
+  `FAKE_ENV_ID="Franka-Stack-Fake-v0"`); `ros_backend.py` (`MultipandaRosBackend`, real,
+  **bring-up-gated** — joins hucebot's controller docker DDS graph).
+- **`mile_franka/pose/`** — `Pose`/`ObjectPoseSource` ABCs (`base.py`); `MujocoGtPoseSource`
+  (`mujoco_gt.py`, real, bring-up-gated).
+- **`mile_franka/teleop/`** — `TeleopDevice`/`TeleopReading` ABCs (`base.py`);
+  `SpaceMouseDevice` (`spacemouse.py`, injectable raw reader so it loads without hardware).
+- **`mile_franka/policies/`** — `ScriptedStackPolicy` (`scripted.py`, mediocre state machine
+  over GT poses); `build_actor_critic_policy`/`train_bc` (`bc.py`, MILE-arch policy + imitation
+  BC); `collect_scripted_demos` (`demos.py`).
+- **`mile_franka/collect.py`** — `Collector` (replaces `collect_synthetic_data`; returns the
+  same `(dataset, mean_score, mean_success)` tuple) + `ScriptedIntervener` (headless scripted
+  "human") / `TeleopIntervener` (adapts any `TeleopDevice`). Emits the Box dataset via
+  `InterventionDatasetBuilder` (`data/dataset.py`, `BOX_KEYS` is the single schema source).
+- **`mile_franka/envs/ros_backend.py` + `pose/mujoco_gt.py` carry `CONFIRM@bringup:` markers**
+  (`grep -rn CONFIRM@bringup mile_franka`) for topic/action/frame names to confirm against the
+  live hucebot controller; see `docs/superpowers/notes/2026-06-15-phase2-bringup-checklist.md`.
+
+Plans/specs live under `docs/superpowers/`. The real backend must run against **hucebot's
+multipanda_ros2 controller docker** (the France lab's image), not a hand-rolled stack.

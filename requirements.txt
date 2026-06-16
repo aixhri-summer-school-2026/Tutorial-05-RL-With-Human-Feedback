@@ -4,3 +4,7 @@ wandb
 torch
 stable-baselines3<=2.3.2
 imitation
+# Pin Metaworld to the last v2-era commit (gymnasium 0.29 / mujoco<3). The PyPI
+# release (3.0.0) is v3 and requires gymnasium>=1.1, which is incompatible with
+# the imitation/stable-baselines3 versions used here.
+metaworld @ git+https://github.com/Farama-Foundation/Metaworld.git@c822f28f582ba1ad49eb5dcf61016566f28003ba
