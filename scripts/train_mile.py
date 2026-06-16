@@ -1,6 +1,9 @@
 import gymnasium as gym
 from gymnasium.wrappers import FrameStack, FlattenObservation
-from metaworld.envs import ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE, ALL_V2_ENVIRONMENTS_GOAL_HIDDEN # type: ignore
+try:
+    from metaworld.envs import ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE, ALL_V2_ENVIRONMENTS_GOAL_HIDDEN # type: ignore
+except Exception:  # MetaWorld is not installed on the Franka path
+    ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE, ALL_V2_ENVIRONMENTS_GOAL_HIDDEN = {}, {}
 
 import pickle
 import numpy as np
@@ -27,10 +30,25 @@ from imitation.util.networks import RunningNorm
 
 from mile.utils import prepare_dataset, read_config, DictDataset, Logger, log_to_file
 from mile.algorithm import InterventionTrainer
-from collect_synthetic_interventions import collect_synthetic_data
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-rand = np.random.randint(0, 1000)   
+rand = np.random.randint(0, 1000)
+
+
+def build_franka_or_metaworld_env(env_name):
+    """Build the wrapped (FrameStack+Flatten) training env for either backend."""
+    if env_name + '-goal-observable' in ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE:
+        env = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[env_name + '-goal-observable']()
+        env._freeze_rand_vec = False
+        env = FrameStack(env, 4)
+        env = FlattenObservation(env)
+    elif env_name.startswith('Franka'):
+        from mile_franka.envs.registration import register_franka_envs, make_franka_env
+        register_franka_envs()
+        env = make_franka_env(gym.make(env_name))
+    else:
+        env = gym.make(env_name)
+    return Monitor(env)
 
 
 def offline_training(config):
@@ -120,30 +138,29 @@ def iterative_training(config):
     episodes_per_round = config['experiment']['episodes_per_round']
 
     env_name = config['experiment']['env_name']
-    if env_name+'-goal-observable' in ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE:
-        env = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[env_name+'-goal-observable']()
-        env._freeze_rand_vec = False
-        env = FrameStack(env, 4)
-        env = FlattenObservation(env)
-    else:
-        env = gym.make(env_name)
-    env = Monitor(env)
+    env = build_franka_or_metaworld_env(env_name)
     env.reset()
 
     assert config['experiment']['policy_type'] in ['sac', 'qnetwork', 'bc'], 'Invalid policy type, choose from sac, qnetwork, bc'
 
     if config['experiment']['policy_type'] == 'sac':
         policy = SACPolicy.load(config['experiment']['policy_path'])
-        intervention_policy = SACPolicy.load(config['experiment']['intervention_policy_path'])
-        intervention_policy.eval()
+        intervention_policy = None
+        if config['experiment'].get('collector', 'synthetic') == 'synthetic':
+            intervention_policy = SACPolicy.load(config['experiment']['intervention_policy_path'])
+            intervention_policy.eval()
     elif config['experiment']['policy_type'] == 'qnetwork':
         policy = QNetwork.load(config['experiment']['policy_path'])
-        intervention_policy = QNetwork.load(config['experiment']['intervention_policy_path'])
-        intervention_policy.eval()
+        intervention_policy = None
+        if config['experiment'].get('collector', 'synthetic') == 'synthetic':
+            intervention_policy = QNetwork.load(config['experiment']['intervention_policy_path'])
+            intervention_policy.eval()
     elif config['experiment']['policy_type'] == 'bc':
         policy = ActorCriticPolicy.load(config['experiment']['policy_path'])
-        intervention_policy = ActorCriticPolicy.load(config['experiment']['intervention_policy_path'])
-        intervention_policy.eval()
+        intervention_policy = None
+        if config['experiment'].get('collector', 'synthetic') == 'synthetic':
+            intervention_policy = ActorCriticPolicy.load(config['experiment']['intervention_policy_path'])
+            intervention_policy.eval()
 
     if config['experiment']['mental_model_type'] == 'bc':
         mental_model = ActorCriticPolicy(observation_space=env.observation_space,
@@ -153,8 +170,10 @@ def iterative_training(config):
                                         features_extractor_class=NormalizeFeaturesExtractor,
                                         features_extractor_kwargs=dict(normalize_class=RunningNorm),
                                         )
-        gt_mental_model = ActorCriticPolicy.load(config['experiment']['gt_mental_model_path'])
-        gt_mental_model.eval()
+        gt_mental_model = None
+        if config['experiment'].get('collector', 'synthetic') == 'synthetic':
+            gt_mental_model = ActorCriticPolicy.load(config['experiment']['gt_mental_model_path'])
+            gt_mental_model.eval()
     elif config['experiment']['mental_model_type'] == 'qnetwork':
         mental_model = DQNPolicy(observation_space=env.observation_space,
                                 action_space=env.action_space,
@@ -163,13 +182,17 @@ def iterative_training(config):
                                 features_extractor_class=NormalizeFeaturesExtractor,
                                 features_extractor_kwargs=dict(normalize_class=RunningNorm),
                                 ).q_net
-        gt_mental_model = QNetwork.load(config['experiment']['gt_mental_model_path'])
-        gt_mental_model.eval()
+        gt_mental_model = None
+        if config['experiment'].get('collector', 'synthetic') == 'synthetic':
+            gt_mental_model = QNetwork.load(config['experiment']['gt_mental_model_path'])
+            gt_mental_model.eval()
 
     policy.to(device)
-    intervention_policy.to(device)
+    if intervention_policy is not None:
+        intervention_policy.to(device)
     mental_model.to(device)
-    gt_mental_model.to(device)
+    if gt_mental_model is not None:
+        gt_mental_model.to(device)
 
     if config['experiment']['use_warm_start']:
         mental_model.load(config['experiment']['warm_start_path'])
@@ -202,6 +225,23 @@ def iterative_training(config):
                                   config=config,
                                   **config['train'])
 
+    collector_type = config['experiment'].get('collector', 'synthetic')
+    real_collector = None
+    intervener = None
+    if collector_type == 'real':
+        from mile_franka.collect import Collector, ScriptedIntervener, TeleopIntervener
+        from mile_franka.config import StackTaskConfig
+        real_collector = Collector(env)
+        which = config['experiment'].get('intervener', 'scripted')
+        if which == 'scripted':
+            from mile_franka.policies.scripted import ScriptedStackPolicy
+            intervener = ScriptedIntervener(ScriptedStackPolicy(StackTaskConfig(), mediocre=False))
+        elif which == 'spacemouse':
+            from mile_franka.teleop.spacemouse import SpaceMouseDevice
+            intervener = TeleopIntervener(SpaceMouseDevice())
+        else:
+            raise ValueError(f'Unknown intervener: {which}')
+
     if config['experiment']['include_offline_dataset']:
         with open(config['experiment']['offline_dataset_path'], 'rb') as f:
             dataset = pickle.load(f)    
@@ -228,13 +268,18 @@ def iterative_training(config):
     for round in range(num_rounds):
         log_to_file('Round: {}'.format(round), EXPERIMENT_NAME+'_log.txt')
         print('Collecting intervention data...')
-        additional_data, mean_score, mean_success_rate = collect_synthetic_data(env=env,
-                                                                                n_episodes=episodes_per_round,
-                                                                                cost=trainer.intervention_cost,
-                                                                                cdf_scale=trainer.intervention_scale,
-                                                                                rollout_policy=trainer.policy,
-                                                                                intervention_policy=intervention_policy,
-                                                                                mental_model=gt_mental_model)
+        if collector_type == 'real':
+            additional_data, mean_score, mean_success_rate = real_collector.collect_intervention(
+                policy=trainer.policy, intervener=intervener, n_episodes=episodes_per_round)
+        else:
+            from collect_synthetic_interventions import collect_synthetic_data
+            additional_data, mean_score, mean_success_rate = collect_synthetic_data(env=env,
+                                                                                    n_episodes=episodes_per_round,
+                                                                                    cost=trainer.intervention_cost,
+                                                                                    cdf_scale=trainer.intervention_scale,
+                                                                                    rollout_policy=trainer.policy,
+                                                                                    intervention_policy=intervention_policy,
+                                                                                    mental_model=gt_mental_model)
         log_to_file('Dataset size: {}'.format(len(additional_data['state'])), EXPERIMENT_NAME+'_log.txt')
         log_to_file(f"Percentage of no-intervention: {additional_data['intervention'].count(0)/len(additional_data['intervention'])}", EXPERIMENT_NAME+'_log.txt')
         log_to_file(f"Success rate: {mean_success_rate}", EXPERIMENT_NAME+'_log.txt')
