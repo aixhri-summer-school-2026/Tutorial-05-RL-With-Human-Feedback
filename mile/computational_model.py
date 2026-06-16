@@ -114,6 +114,8 @@ def computational_intervention_model(state: torch.Tensor,
         elif isinstance(policy, ActorCriticPolicy):
             dist = policy.get_distribution(state)
             policy_dist = dist.distribution
+            mu = policy_dist.loc
+            log_std = torch.log(policy_dist.scale)
         else:
             raise ValueError("Policy should be either SACPolicy or ActorCriticPolicy")
         mental_model_expectation = torch.mean(sum_independent_dims(policy_dist.log_prob(mental_model_samples)), dim=0)
