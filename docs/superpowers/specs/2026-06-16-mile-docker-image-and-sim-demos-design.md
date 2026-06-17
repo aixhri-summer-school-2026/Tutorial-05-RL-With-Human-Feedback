@@ -18,9 +18,16 @@ collected and trained from the **live multipanda MuJoCo sim** rather than the fa
    with short verbs.
 3. Use that image to **collect scripted sim demos through `FrankaEnv`** and **BC-train the
    (deliberately mediocre) base policy** in the same obs space it will be deployed in.
-4. Shape the image, mounts, Makefile, config layout, and base-policy obs space so the
-   **iterative MILE run in sim drops in with no rework** (no reverting `config_franka.json`,
-   no second image, no re-trained base policy). See §7.
+4. Shape the image, mounts, Makefile, config, and base-policy obs space so the **iterative
+   MILE run in sim drops in with no rework** — one sim env, one base-policy artifact, one
+   config, one image. See §7.
+
+**Decision (this increment):** the headless **fake env is dropped as a path** — no
+fake-env CI gate, no separate fake base policy, no second config. `Franka-Stack-Sim-v0` is
+the single backend for collection, base-policy training, and the MILE run. (The fake env
+code + `smoke_franka_env.py` may remain in the repo for unit-level import checks, but they
+are no longer a gate and nothing here targets them.) Trade-off accepted: there is no longer
+a no-docker test path; the live sim in the image is the de-facto test environment.
 
 ## 2. Why fully in-container (decision)
 
@@ -80,7 +87,7 @@ software GL) from `franka-sim-verified-bringup`:
   demo `.npz` under `output_dir/franka/`.
 - `make base-policy` — BC-train from the collected `.npz` (now in-container).
 - `make mile` — the iterative MILE run against the live sim: `cd scripts && python
-  train_mile.py --config ../config_franka_sim.json` (requires `make sim-up`; see §7).
+  train_mile.py --config ../config_franka.json` (now sim; requires `make sim-up`; see §7).
 - `make shell` — interactive shell, pre-`cd`'d into the repo with `PYTHONPATH`/ROS env set.
 
 Compose is the reproducibility substrate; the Makefile is the one-command UX. Both, not
@@ -127,12 +134,12 @@ demos.
 - **Collect:** `franka_sim_rollout_record.py` already runs `ScriptedStackPolicy` over
   `FrankaEnv` and saves `obs / acts / episode` to `.npz` (light deps, runs in-container).
 - **Train (gap to fill):** `build_base_policy.py` today collects+trains in one process on
-  the **fake** env and cannot read an `.npz`. Add an **npz-fed BC path** (either a
-  `--demos <npz>` flag on `build_base_policy.py` or a small `train_bc_from_npz.py`) that
-  loads the saved sim transitions, BC-trains an `ActorCriticPolicy`
-  (`FrameStack(4)+Flatten` obs, net `[256,256]`), saves to
-  `trained_models/franka/base_policy`, and reports rollout success. Runs in-container now
-  that torch is present.
+  the **fake** env and cannot read an `.npz`. Add a **`--demos <npz>` flag** to
+  `build_base_policy.py`: when given, it skips its own scripted collection, loads the saved
+  sim transitions, BC-trains an `ActorCriticPolicy` (`FrameStack(4)+Flatten` obs, net
+  `[256,256]`), saves to `trained_models/franka/base_policy`, and reports rollout success
+  on the sim env. Runs in-container now that torch is present. (The `--demos`-less,
+  fake-env collect+train path is no longer exercised — see §1 decision.)
 
 ## 6. Acceptance gates
 
@@ -141,11 +148,12 @@ demos.
 2. **Image + compose + Makefile** — `make build` succeeds; `make up && make shell` lands
    in a ready shell; `make sim-up` brings the stacking sim up headless.
 3. **Collection coherence** — `make collect` produces a coherent rollout MP4 + a `.npz`
-   whose `obs` shape matches `FrameStack(4)+Flatten` of `Franka-Stack-Sim-v0`.
-4. **Base policy** — `make base-policy` trains from that `.npz`, loads as
-   `ActorCriticPolicy`, rolls out, is mediocre (low but non-zero success).
-5. **MILE-readiness smoke** — `make mile` runs ≥1 iterative round in the live sim fully
-   in-container (scripted intervener), consuming the sim-trained base policy without error.
+   whose `obs` shape matches `FrameStack(4)+Flatten` of `Franka-Stack-Sim-v0` ((72,)).
+4. **Base policy** — `make base-policy` (with `--demos`) trains from that `.npz`, loads as
+   `ActorCriticPolicy`, rolls out on the sim env, is mediocre (low but non-zero success).
+5. **MILE-readiness smoke** — `make mile` (sim `config_franka.json`) runs ≥1 iterative round
+   in the live sim fully in-container (scripted intervener), consuming the sim-trained base
+   policy without error.
 
 ## 7. Forward compatibility with the iterative MILE run (no future reverts)
 
@@ -164,21 +172,17 @@ here has to be reverted then. Verified against `scripts/train_mile.py`
   `Collector` runs the base policy on `FrankaEnv` via `make_franka_env`
   (`FrameStack(4)+Flatten`). Training the base policy on **sim** demos (§5) means the policy
   the collector loads already lives in the deployment obs space — this is the reason for
-  the sim-demo choice, not an afterthought. `config_franka_sim.json`'s `policy_path` reuses
-  `../trained_models/franka/base_policy`.
+  the sim-demo choice, not an afterthought.
 
-- **Two configs, never reverted:** keep `config_franka.json` as the **fake-env headless
-  CI gate** (parent spec acceptance gate 6) untouched. Add **`config_franka_sim.json`** for
-  the in-docker sim run — identical except `env_name: Franka-Stack-Sim-v0` (and any tuned
-  `num_rounds`/`episodes_per_round`). Both keep `collector: real`,
-  `intervener: scripted`, `rollout.auto_eval: false`, and the same
-  `policy_path`/`save.outdir` layout. The fake gate and the sim run therefore want
-  **different base-policy artifacts in the same obs *shape* (72,) but different obs
-  *semantics*** (fake EE ≈ TCP; sim EE = `panda_hand`). Resolve by giving the fake gate its
-  own fake-trained policy path (e.g. `base_policy_fake`) so a sim-trained policy is never
-  silently rolled out on the fake env. Decide the two paths now; do not share one artifact.
+- **One config, one artifact (fake env dropped).** Per the §1 decision there is a single
+  base-policy artifact `../trained_models/franka/base_policy` (sim-trained) and a single
+  config: **edit `config_franka.json` in place** to set `env_name: Franka-Stack-Sim-v0`,
+  keeping `collector: real`, `intervener: scripted`, `rollout.auto_eval: false`, and the
+  existing `policy_path`/`save.outdir`. No `config_franka_sim.json`, no `base_policy_fake`,
+  no obs-semantics mismatch to manage — the base policy and the MILE collector share the
+  one sim obs space. Update CLAUDE.md's "headless gate" wording accordingly.
 
-- **`cd scripts` + mounts:** `config_franka_sim.json` uses paths relative to `scripts/`
+- **`cd scripts` + mounts:** `config_franka.json` uses paths relative to `scripts/`
   (`../trained_models/...`, `../output_dir/franka`), so `make mile` must `cd scripts`
   (parent spec / CLAUDE.md). The repo bind mount already covers `trained_models/` and
   `output_dir/`; no separate volume wiring needed.
