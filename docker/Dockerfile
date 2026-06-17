@@ -3,6 +3,10 @@
 FROM hucebot:franka-humble
 USER root
 
+# Headless X server for MuJoCo GLFW rendering (software GL via llvmpipe).
+RUN apt-get update -qq && apt-get install -y --no-install-recommends xvfb \
+ && rm -rf /var/lib/apt/lists/*
+
 # Install the MILE layer. CPU torch wheel keeps the image lean; the MLP trains on CPU.
 # (For a CUDA box, swap the index URL and add `gpus: all` in docker-compose.yml.)
 COPY docker/requirements-mile.txt /tmp/requirements-mile.txt
