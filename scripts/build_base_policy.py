@@ -8,8 +8,9 @@ import argparse
 import gymnasium as gym
 import numpy as np
 from gymnasium.wrappers import FlattenObservation, FrameStack
+from imitation.data.types import Transitions
 
-from mile_franka.envs.registration import FAKE_ENV_ID, register_franka_envs
+from mile_franka.envs.registration import FAKE_ENV_ID, SIM_ENV_ID, register_franka_envs
 from mile_franka.policies.bc import train_bc
 from mile_franka.policies.demos import collect_scripted_demos
 from mile_franka.policies.scripted import ScriptedStackPolicy
@@ -30,9 +31,29 @@ def eval_policy(env, policy, n_episodes, rng):
     return successes / n_episodes
 
 
+def load_npz_transitions(path):
+    d = np.load(path, allow_pickle=False)
+    obs = d["obs"].astype(np.float32)
+    acts = d["acts"].astype(np.float32)
+    ep = d["episode"]
+    n = len(obs)
+    next_obs = np.empty_like(obs)
+    dones = np.zeros(n, dtype=bool)
+    for i in range(n):
+        if i + 1 < n and ep[i + 1] == ep[i]:
+            next_obs[i] = obs[i + 1]
+        else:
+            next_obs[i] = obs[i]
+            dones[i] = True
+    return Transitions(obs=obs, acts=acts, infos=np.array([{}] * n),
+                       next_obs=next_obs, dones=dones)
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--env_id", default=FAKE_ENV_ID)
+    ap.add_argument("--env_id", default=SIM_ENV_ID)
+    ap.add_argument("--demos", default=None,
+                    help="path to a sim-demo .npz; skips scripted collection when set")
     ap.add_argument("--demo_episodes", type=int, default=60)
     ap.add_argument("--bc_epochs", type=int, default=30)
     ap.add_argument("--eval_episodes", type=int, default=30)
@@ -45,18 +66,26 @@ def main():
     env = FlattenObservation(FrameStack(gym.make(args.env_id), 4))
     rng = np.random.default_rng(args.seed)
 
-    scripted = ScriptedStackPolicy(mediocre=args.mediocre)
-    print(f"Collecting {args.demo_episodes} scripted demos (mediocre={args.mediocre})...")
-    demos = collect_scripted_demos(env, scripted, args.demo_episodes, rng)
-    print(f"Collected {len(demos.obs)} transitions; BC training {args.bc_epochs} epochs...")
+    if args.demos:
+        print(f"Loading demos from {args.demos} ...")
+        demos = load_npz_transitions(args.demos)
+    else:
+        scripted = ScriptedStackPolicy(getattr(env.unwrapped, "config", None),
+                                       mediocre=args.mediocre)
+        print(f"Collecting {args.demo_episodes} scripted demos (mediocre={args.mediocre})...")
+        demos = collect_scripted_demos(env, scripted, args.demo_episodes, rng)
+    print(f"Using {len(demos.obs)} transitions; BC training {args.bc_epochs} epochs...")
     policy = train_bc(demos, env.observation_space, env.action_space, rng,
                       n_epochs=args.bc_epochs)
 
     import os
     os.makedirs(os.path.dirname(args.save_path), exist_ok=True)
     policy.save(args.save_path)
-    rate = eval_policy(env, policy, args.eval_episodes, rng)
-    print(f"Saved base policy to {args.save_path}; success rate = {rate:.2f}")
+    if args.eval_episodes > 0:
+        rate = eval_policy(env, policy, args.eval_episodes, rng)
+        print(f"Saved base policy to {args.save_path}; success rate = {rate:.2f}")
+    else:
+        print(f"Saved base policy to {args.save_path}; success rate = 0.00")
 
 
 if __name__ == "__main__":
