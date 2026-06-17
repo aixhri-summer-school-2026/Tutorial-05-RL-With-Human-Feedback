@@ -3,6 +3,10 @@
 set -e
 source /home/user/mile-code/scripts/in_container_env.sh
 
+# 0. Kill any prior sim launch so re-runs don't leave duplicate ROS2 nodes on the DDS graph.
+pkill -f 'franka_sim_stacking' 2>/dev/null || true
+sleep 2
+
 # 1. Inject the cube scene beside franka_description's panda.xml (relative includes need this).
 FD=$(python3 -c "from ament_index_python.packages import get_package_share_directory as g; print(g('franka_description'))")
 DEST="$FD/mujoco/franka"
