@@ -22,7 +22,7 @@
             "outdir": "../output_dir/franka"
         },
         "rollout": { "enabled": false, "auto_eval": false, "n_episodes": 5, "every_n_epochs": 100 },
-        "env_name": "Franka-Stack-Fake-v0",
+        "env_name": "Franka-Stack-Sim-v0",
         "policy_type": "bc",
         "policy_path": "../trained_models/franka/base_policy",
         "mental_model_type": "bc",
