@@ -42,9 +42,32 @@ def stop_recorder(proc):
         proc.wait(timeout=10)
 
 
-def run_episode(env, policy, rng, seed):
+def current_state(obs):
+    frame = np.asarray(obs)[-18:]
+    return {
+        "ee": frame[:3].copy(),
+        "width": float(frame[3]),
+        "top": frame[4:7].copy(),
+        "bottom": frame[11:14].copy(),
+    }
+
+
+def format_state(state):
+    return (
+        f"ee={np.array2string(state['ee'], precision=3)} "
+        f"width={state['width']:.3f} "
+        f"top={np.array2string(state['top'], precision=3)} "
+        f"bottom={np.array2string(state['bottom'], precision=3)}"
+    )
+
+
+def reset_episode(env, policy, rng, seed):
     obs, _ = env.reset(seed=seed)
     policy.reset(rng)
+    return obs
+
+
+def run_episode(env, policy, obs):
     obs_list, act_list = [], []
     info = {}
     for _ in range(env.unwrapped.config.max_steps):
@@ -55,7 +78,7 @@ def run_episode(env, policy, rng, seed):
         obs = next_obs
         if info.get("success") or terminated or truncated:
             break
-    return obs_list, act_list, bool(info.get("success", False))
+    return obs_list, act_list, bool(info.get("success", False)), obs
 
 
 def main():
@@ -77,6 +100,10 @@ def main():
     ap.add_argument("--size", default="1280x720")
     ap.add_argument("--fps", type=int, default=15)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--video_start_hold", type=float, default=0.5,
+                    help="seconds to hold the reset scene before policy actions")
+    ap.add_argument("--video_end_hold", type=float, default=0.5,
+                    help="seconds to keep recording after the episode ends")
     args = ap.parse_args()
 
     max_attempts = args.max_attempts if args.max_attempts > 0 else 3 * args.episodes
@@ -87,34 +114,49 @@ def main():
     policy = ScriptedStackPolicy(getattr(env.unwrapped, "config", None),
                                  mediocre=args.mediocre)
 
-    # Legacy: single combined video for all episodes.
+    # Legacy: single combined video for all episodes. Prefer --out_dir: per-episode
+    # videos start after reset, so their first frame is the actual episode start state.
     combined_rec = None
-    if args.out and not args.out_dir:
-        combined_rec = start_recorder(args.out, args.display, args.size, args.fps)
-        time.sleep(1.0)
 
     all_obs, all_acts, all_ep = [], [], []
     saved = 0
+    successes = 0
     attempt = 0
 
     try:
         while saved < args.episodes and attempt < max_attempts:
             ep_path = None
             ep_rec = None
+            obs = reset_episode(env, policy, rng, args.seed + attempt)
+            start_state = current_state(obs)
+            print(f"attempt {attempt}: start {format_state(start_state)}")
+
+            if args.out and not args.out_dir and combined_rec is None:
+                combined_rec = start_recorder(args.out, args.display, args.size, args.fps)
+                time.sleep(args.video_start_hold)
+
             if args.out_dir:
                 ep_path = os.path.join(args.out_dir, f"ep{saved}.mp4")
                 os.makedirs(args.out_dir, exist_ok=True)
                 ep_rec = start_recorder(ep_path, args.display, args.size, args.fps)
-                time.sleep(0.5)
+                time.sleep(args.video_start_hold)
 
-            obs_list, act_list, success = run_episode(env, policy, rng, args.seed + attempt)
+            obs_list, act_list, success, final_obs = run_episode(env, policy, obs)
+            end_state = current_state(final_obs)
+            if ep_rec is not None or combined_rec is not None:
+                time.sleep(args.video_end_hold)
 
             if ep_rec is not None:
                 stop_recorder(ep_rec)
 
-            print(f"attempt {attempt}: success={success} steps={len(obs_list)}")
+            print(
+                f"attempt {attempt}: end success={success} steps={len(obs_list)} "
+                f"{format_state(end_state)}"
+            )
 
             if success or not args.require_success:
+                if success:
+                    successes += 1
                 for o, a in zip(obs_list, act_list):
                     all_obs.append(o)
                     all_acts.append(a)
@@ -141,8 +183,8 @@ def main():
                         obs=np.array(all_obs, dtype=np.float32),
                         acts=np.array(all_acts, dtype=np.float32),
                         episode=np.array(all_ep, dtype=np.int64))
-    rate = saved / max(attempt, 1)
-    print(f"success rate = {rate:.2f} ({saved} success / {attempt} attempts)")
+    rate = successes / max(attempt, 1)
+    print(f"success rate = {rate:.2f} ({successes} success / {attempt} attempts)")
     print(f"saved {len(all_obs)} transitions -> {args.data}")
     if args.out_dir:
         print(f"saved {saved} episode videos -> {args.out_dir}")

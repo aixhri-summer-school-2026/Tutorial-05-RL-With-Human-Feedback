@@ -46,7 +46,7 @@ class FrankaEnv(gym.Env):
         xy_off = float(np.linalg.norm(top[:2] - bottom[:2]))
         target_z = float(bottom[2]) + c.cube_size
         z_err = abs(float(top[2]) - target_z)
-        released = self.backend.get_gripper_width() > c.gripper_closed_width + 1e-4
+        released = self.backend.get_gripper_width() > c.gripper_open_width - 0.01
         return xy_off < c.success_xy_tol and z_err < c.success_z_tol and released
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
@@ -60,8 +60,11 @@ class FrankaEnv(gym.Env):
     def step(self, action):
         c = self.config
         action = np.asarray(action, dtype=np.float32).reshape(4)
+        # Anchor the commanded target to the actual EE position so the accumulator
+        # cannot overshoot the waypoint and oscillate when the controller lags.
+        actual_ee = np.asarray(self.backend.get_ee_position(), dtype=np.float32)
         self._ee_target = np.clip(
-            self._ee_target + action[:3] * c.action_scale,
+            actual_ee + action[:3] * c.action_scale,
             c.workspace_low, c.workspace_high).astype(np.float32)
         self.backend.set_equilibrium_pose(self._ee_target, DOWN_QUAT)
         self.backend.set_gripper(float(action[3]))

@@ -28,7 +28,7 @@ class StackTaskConfig:
         default_factory=lambda: np.array([0.70, 0.30, 0.40], dtype=np.float32))
     table_z: float = 0.02                    # z of the table surface (cube resting plane)
 
-    action_scale: float = 0.05               # meters of EE delta per unit action component
+    action_scale: float = 0.055              # meters of EE delta per 10 Hz action tick
     max_steps: int = 150                     # truncation horizon
 
     # Success: top cube centered on bottom cube and released.
@@ -37,4 +37,4 @@ class StackTaskConfig:
 
     # Reset randomization: cube centers drawn from an inner margin of the workspace.
     reset_margin: float = 0.05               # m kept clear of workspace xy edges
-    reset_min_separation: float = 0.10       # m minimum xy gap between the two cubes
+    reset_min_separation: float = 0.16       # m minimum xy gap between the two cubes

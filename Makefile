@@ -27,14 +27,16 @@ sim-up:                      ## launch the stacking sim headless (detached)
 
 collect-mediocre:            ## MEDIOCRE demos (feeds the base policy) -> sim_demos_mediocre.npz
 	$(call RUN,python3 scripts/franka_sim_rollout_record.py \
-	    --episodes 3 --mediocre true --require_success false \
+	    --episodes 5 --mediocre true --require_success false \
+	    --video_start_hold 0.5 --video_end_hold 0.5 \
 	    --out_dir output_dir/franka/rollouts_mediocre_$(TS) \
 	    --data output_dir/franka/sim_demos_$(TS).npz && \
 	  cp output_dir/franka/sim_demos_$(TS).npz output_dir/franka/sim_demos_mediocre.npz)
 
 collect-expert:              ## PERFECT (successful-only) demos -> sim_demos_expert.npz
 	$(call RUN,python3 scripts/franka_sim_rollout_record.py \
-	    --episodes 3 --mediocre false --require_success true \
+	    --episodes 5 --mediocre false --require_success true \
+	    --video_start_hold 0.5 --video_end_hold 0.5 \
 	    --out_dir output_dir/franka/rollouts_expert_$(TS) \
 	    --data output_dir/franka/sim_demos_$(TS).npz && \
 	  cp output_dir/franka/sim_demos_$(TS).npz output_dir/franka/sim_demos_expert.npz)

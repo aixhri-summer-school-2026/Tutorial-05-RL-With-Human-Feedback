@@ -16,6 +16,15 @@ import os
 import torch
 from torch.utils.data import DataLoader
 
+# PyTorch 2.6+ changed weights_only default to True, but SB3 policy files embed
+# gymnasium/numpy/imitation globals that are not allowlisted.  All checkpoints in
+# this repo are produced by build_base_policy.py (trusted source), so False is safe.
+_torch_load_orig = torch.load
+def _torch_load_compat(*args, **kwargs):
+    kwargs.setdefault("weights_only", False)
+    return _torch_load_orig(*args, **kwargs)
+torch.load = _torch_load_compat
+
 from stable_baselines3.sac.policies import SACPolicy
 from stable_baselines3.dqn.policies import DQNPolicy, QNetwork
 from stable_baselines3.common.monitor import Monitor
@@ -230,12 +239,12 @@ def iterative_training(config):
     intervener = None
     if collector_type == 'real':
         from mile_franka.collect import Collector, ScriptedIntervener, TeleopIntervener
-        from mile_franka.config import StackTaskConfig
         real_collector = Collector(env)
         which = config['experiment'].get('intervener', 'scripted')
         if which == 'scripted':
             from mile_franka.policies.scripted import ScriptedStackPolicy
-            intervener = ScriptedIntervener(ScriptedStackPolicy(StackTaskConfig(), mediocre=False))
+            task_config = getattr(env.unwrapped, 'config', None)
+            intervener = ScriptedIntervener(ScriptedStackPolicy(task_config, mediocre=False))
         elif which == 'spacemouse':
             from mile_franka.teleop.spacemouse import SpaceMouseDevice
             intervener = TeleopIntervener(SpaceMouseDevice())
