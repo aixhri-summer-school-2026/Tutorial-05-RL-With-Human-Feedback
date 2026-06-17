@@ -7,7 +7,7 @@ RUN      = $(DC) exec sim bash -lc '$(ENVSH) && $(1)'
 RUND     = $(DC) exec -d sim bash -lc '$(ENVSH) && $(1)'
 TS      := $(shell date -u +%Y%m%dT%H%M%S)
 
-.PHONY: build up down shell sim-up collect-mediocre collect-expert base-policy mile
+.PHONY: build up down shell sim-up sim-gui collect-mediocre collect-expert base-policy mile spacemouse-check eval-base
 
 build:                       ## build the image
 	$(DC) build
@@ -24,6 +24,10 @@ shell:                       ## interactive shell, env sourced, cd'd into the re
 sim-up:                      ## launch the stacking sim headless (detached)
 	$(call RUND,bash scripts/sim_up.sh)
 	@echo "sim launching headless; give it ~10s, then check: make collect-mediocre"
+
+sim-gui:                     ## launch the stacking sim with a LIVE window on the host display
+	@echo "Host prereq (once per login): xhost +local:root"
+	$(DC) exec -e DISPLAY=$$DISPLAY sim bash -lc '$(ENVSH) && bash scripts/sim_gui.sh'
 
 collect-mediocre:            ## MEDIOCRE demos (feeds the base policy) -> sim_demos_mediocre.npz
 	$(call RUN,python3 scripts/franka_sim_rollout_record.py \

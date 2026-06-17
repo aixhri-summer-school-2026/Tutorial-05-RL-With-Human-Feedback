@@ -11,15 +11,16 @@ services:
     network_mode: host
     working_dir: /home/user/mile-code
     environment:
-      - DISPLAY=:99
-      - LIBGL_ALWAYS_SOFTWARE=1
+      - DISPLAY=${DISPLAY:-:99}            # host display when set; :99 (Xvfb) otherwise
+      - LIBGL_ALWAYS_SOFTWARE=1            # overridden per-exec by sim-gui for HW GL
       - GALLIUM_DRIVER=llvmpipe
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - NVIDIA_DRIVER_CAPABILITIES=all
     volumes:
       - ..:/home/user/mile-code            # live host edits in dev
-      - /tmp/.X11-unix:/tmp/.X11-unix      # optional: view from host X if desired
+      - /tmp/.X11-unix:/tmp/.X11-unix      # host X socket for sim-gui live window
     # devices:
-    #   - /dev/hidraw0:/dev/hidraw0        # SpaceMouse (lab) — uncomment when attached
+    #   - /dev/hidraw0:/dev/hidraw0        # SpaceMouse (lab) — set node below, then uncomment
     #   - /dev/video0:/dev/video0          # camera (France) — uncomment on hardware
-    # gpus: all                            # optional CUDA torch
+    gpus: all                              # NVIDIA hardware GL + faster torch
     command: sleep infinity
