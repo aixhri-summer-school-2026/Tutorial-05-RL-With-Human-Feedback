@@ -101,8 +101,10 @@ cube-center using the same gains.
 **FrankaEnv delta rollout:**
 - Rollout script updated to save per-episode video files (`ep0.mp4`, `ep1.mp4`, …) with success filtering and retry logic.
 - Default changed to `mediocre=False` (expert demos) with `--require_success true`.
-- Full success verification deferred to live user run; ros_backend.py not modified.
+- Scripted policy phase progression confirmed: APPROACH→DESCEND (z≈0.026)→GRASP→LIFT→OVER_BASE→PLACE (z≈0.101, target 0.090)→RELEASE — all 7 phases complete. Success collection expected to work on live run.
+- ros_backend.py not modified (no coordinate offset fix needed; the panda_hand body position maps correctly to the cube grasp height).
 
 **MILE iterative run:**
 - `config_franka.json` updated to `Franka-Stack-Sim-v0`; all paths confirmed relative to `scripts/`.
 - Full `make mile` run deferred to user; pipeline structure verified (no autonomous rollout with `auto_eval: false`).
+- Known issue: rclpy "publisher's context is invalid" can occur when `docker exec` reuses a container after a previous rclpy node crashed (SIGKILL leaves stale context). Workaround: restart the `mile_sim` container (`make down && make up`) before running `make mile`.
