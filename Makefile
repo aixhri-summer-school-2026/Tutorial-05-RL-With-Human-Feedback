@@ -5,6 +5,7 @@ DC      := docker compose -f docker/docker-compose.yml
 ENVSH   := source scripts/in_container_env.sh
 RUN      = $(DC) exec sim bash -lc '$(ENVSH) && $(1)'
 RUND     = $(DC) exec -d sim bash -lc '$(ENVSH) && $(1)'
+TS      := $(shell date -u +%Y%m%dT%H%M%S)
 
 .PHONY: build up down shell sim-up collect base-policy mile
 
@@ -24,13 +25,17 @@ sim-up:                      ## launch the stacking sim headless (detached)
 	$(call RUND,bash scripts/sim_up.sh)
 	@echo "sim launching headless; give it ~10s, then check: make collect"
 
-collect:                     ## scripted sim rollouts -> MP4 + demo .npz
-	$(call RUN,python scripts/franka_sim_rollout_record.py --episodes 3 \
-	  --out output_dir/franka/rollout.mp4 --data output_dir/franka/sim_demos.npz)
+collect:                     ## scripted sim rollouts -> timestamped MP4 + demo .npz (canonical paths updated)
+	$(call RUN,mkdir -p output_dir/franka && \
+	  python3 scripts/franka_sim_rollout_record.py --episodes 3 \
+	    --out output_dir/franka/rollout_$(TS).mp4 \
+	    --data output_dir/franka/sim_demos_$(TS).npz && \
+	  cp output_dir/franka/sim_demos_$(TS).npz output_dir/franka/sim_demos.npz && \
+	  cp output_dir/franka/rollout_$(TS).mp4 output_dir/franka/rollout.mp4)
 
 base-policy:                 ## BC-train the base policy from the collected sim demos
-	$(call RUN,python scripts/build_base_policy.py --demos output_dir/franka/sim_demos.npz \
+	$(call RUN,python3 scripts/build_base_policy.py --demos output_dir/franka/sim_demos.npz \
 	  --save_path trained_models/franka/base_policy)
 
 mile:                        ## iterative MILE run against the live sim
-	$(call RUN,cd scripts && python train_mile.py --config ../config_franka.json)
+	$(call RUN,cd scripts && python3 train_mile.py --config ../config_franka.json)
