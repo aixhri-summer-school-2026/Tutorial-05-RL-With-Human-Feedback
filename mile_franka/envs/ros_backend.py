@@ -375,7 +375,17 @@ class MultipandaRosBackend(RobotBackend):
         return float(self._gripper_width)
 
     def close(self) -> None:
+        if getattr(self, "_node", None) is not None:
+            try:
+                self._node.destroy_node()
+            except Exception:
+                pass
+            self._node = None
+        # Shut down the rclpy context so the next env construction can reinitialise cleanly.
+        # The init guard (rclpy.ok() check in __init__) handles the restart side.
         try:
-            self._node.destroy_node()
+            import rclpy
+            if rclpy.ok():
+                rclpy.shutdown()
         except Exception:
             pass
