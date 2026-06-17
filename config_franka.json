@@ -10,7 +10,7 @@
         "name": "mile-franka",
         "mode": "iterative",
         "collector": "real",
-        "intervener": "scripted",
+        "intervener": "spacemouse",
         "validate": { "enabled": false, "every_n_epochs": 100 },
         "logging": { "terminal_output_to_txt": false, "log_tb": false, "log_wandb": false },
         "save": {
