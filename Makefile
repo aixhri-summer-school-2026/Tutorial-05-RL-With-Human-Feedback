@@ -25,13 +25,12 @@ sim-up:                      ## launch the stacking sim headless (detached)
 	$(call RUND,bash scripts/sim_up.sh)
 	@echo "sim launching headless; give it ~10s, then check: make collect"
 
-collect:                     ## scripted sim rollouts -> timestamped MP4 + demo .npz (canonical paths updated)
-	$(call RUN,mkdir -p output_dir/franka && \
-	  python3 scripts/franka_sim_rollout_record.py --episodes 3 \
-	    --out output_dir/franka/rollout_$(TS).mp4 \
+collect:                     ## collect successful demos -> per-episode MP4s + sim_demos.npz
+	$(call RUN,python3 scripts/franka_sim_rollout_record.py \
+	    --episodes 3 --mediocre false --require_success true \
+	    --out_dir output_dir/franka/rollouts_$(TS) \
 	    --data output_dir/franka/sim_demos_$(TS).npz && \
-	  cp output_dir/franka/sim_demos_$(TS).npz output_dir/franka/sim_demos.npz && \
-	  cp output_dir/franka/rollout_$(TS).mp4 output_dir/franka/rollout.mp4)
+	  cp output_dir/franka/sim_demos_$(TS).npz output_dir/franka/sim_demos.npz)
 
 base-policy:                 ## BC-train the base policy from the collected sim demos
 	$(call RUN,python3 scripts/build_base_policy.py --demos output_dir/franka/sim_demos.npz \
