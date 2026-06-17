@@ -1,0 +1,25 @@
+# One persistent MILE-on-multipanda service. `network_mode: host` shares the DDS graph with
+# the sim; an internal Xvfb (:99) provides the headless display. Device/GPU passthroughs are
+# declared but commented so France-day (SpaceMouse/camera/GPU) is config-only, not a rebuild.
+services:
+  sim:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: mile:franka-humble
+    container_name: mile_sim
+    network_mode: host
+    working_dir: /home/user/mile-code
+    environment:
+      - DISPLAY=:99
+      - LIBGL_ALWAYS_SOFTWARE=1
+      - GALLIUM_DRIVER=llvmpipe
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    volumes:
+      - ..:/home/user/mile-code            # live host edits in dev
+      - /tmp/.X11-unix:/tmp/.X11-unix      # optional: view from host X if desired
+    # devices:
+    #   - /dev/hidraw0:/dev/hidraw0        # SpaceMouse (lab) — uncomment when attached
+    #   - /dev/video0:/dev/video0          # camera (France) — uncomment on hardware
+    # gpus: all                            # optional CUDA torch
+    command: sleep infinity
