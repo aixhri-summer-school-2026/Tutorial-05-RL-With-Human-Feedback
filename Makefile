@@ -55,3 +55,6 @@ mile:                        ## iterative MILE run against the live sim
 
 spacemouse-check:            ## print live SpaceMouse deflection (sanity check; Ctrl-C to stop)
 	$(call RUN,python3 scripts/spacemouse_check.py)
+
+eval-base:                   ## run the BC base policy in sim (no intervention) -> success rate
+	$(call RUN,python3 scripts/eval_base_policy_sim.py --episodes 10)
