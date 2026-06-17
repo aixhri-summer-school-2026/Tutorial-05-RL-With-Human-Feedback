@@ -102,7 +102,7 @@ cube-center using the same gains.
 - Rollout script updated to save per-episode video files (`ep0.mp4`, `ep1.mp4`, …) with success filtering and retry logic.
 - Default changed to `mediocre=False` (expert demos) with `--require_success true`.
 - Scripted policy phase progression confirmed: APPROACH→DESCEND (z≈0.026)→GRASP→LIFT→OVER_BASE→PLACE (z≈0.101, target 0.090)→RELEASE — all 7 phases complete. Success collection expected to work on live run.
-- ros_backend.py not modified (no coordinate offset fix needed; the panda_hand body position maps correctly to the cube grasp height).
+- ros_backend.py **was** modified: EE read switched from `get_body_state("panda_hand")` to the controller's `/cartesian_impedance/cartesian_pos_curr` topic (O_T_EE in panda_link0 frame), removing the ~0.103 m `panda_hand` offset that previously drove the arm underground before grasp. The `panda_hand` body is ~0.103 m above the controller EE frame; without this fix the scripted policy commanded the arm into the table.
 
 **MILE iterative run:**
 - `config_franka.json` updated to `Franka-Stack-Sim-v0`; all paths confirmed relative to `scripts/`.
