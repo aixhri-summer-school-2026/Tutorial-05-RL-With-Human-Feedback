@@ -3,11 +3,13 @@ __pycache__/
 .DS_Store
 *.jpg
 *.txt
+!docker/*.txt
 *.png
 *.egg-info
 wandb/
 logs/
 .vscode/
+*bak
 
 # Generated artifacts (models, datasets, run outputs)
 output_dir/

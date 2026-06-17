@@ -1,0 +1,11 @@
+# MILE training layer installed on top of hucebot:franka-humble.
+# Keep the base image's gymnasium==0.29.1 and rclpy intact. MetaWorld is intentionally absent.
+gymnasium==0.29.1
+stable-baselines3<=2.3.2
+imitation
+wandb
+tensorboard
+pyspacemouse
+hidapi
+pupil-apriltags
+# torch is installed separately in the Dockerfile (CPU wheel) to control the index URL.
