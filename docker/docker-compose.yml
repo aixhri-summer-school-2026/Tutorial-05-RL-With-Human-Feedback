@@ -19,8 +19,8 @@ services:
     volumes:
       - ..:/home/user/mile-code            # live host edits in dev
       - /tmp/.X11-unix:/tmp/.X11-unix      # host X socket for sim-gui live window
-    # devices:
-    #   - /dev/hidraw0:/dev/hidraw0        # SpaceMouse (lab) — set node below, then uncomment
+    devices:
+      - /dev/hidraw0:/dev/hidraw0          # SpaceMouse (3Dconnexion) — verify node with: lsusb | grep -i 3dconnex; ls -l /dev/hidraw*
     #   - /dev/video0:/dev/video0          # camera (France) — uncomment on hardware
     gpus: all                              # NVIDIA hardware GL + faster torch
     command: sleep infinity

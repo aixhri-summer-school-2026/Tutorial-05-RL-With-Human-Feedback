@@ -52,3 +52,6 @@ base-policy:                 ## BC-train the (mediocre) base policy from mediocr
 
 mile:                        ## iterative MILE run against the live sim
 	$(call RUN,cd scripts && python3 train_mile.py --config ../config_franka.json)
+
+spacemouse-check:            ## print live SpaceMouse deflection (sanity check; Ctrl-C to stop)
+	$(call RUN,python3 scripts/spacemouse_check.py)
