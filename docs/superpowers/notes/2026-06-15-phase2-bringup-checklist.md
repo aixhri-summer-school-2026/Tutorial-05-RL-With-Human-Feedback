@@ -25,3 +25,84 @@ hardware (France). Resolve every `CONFIRM@bringup:` marker:
       toggles to 1 when cubes are stacked.
 - [ ] Confirm workspace bounds / `action_scale` feel right for the controller (spec sec 10);
       tune `StackTaskConfig` if needed.
+
+## 2026-06-16 calibration findings (live sim, hucebot:franka-humble)
+
+Verified headless end-to-end (build → launch → render → data). Calibration of the
+`custom_cartesian_impedance_controller` (`franka_example_controllers`) against the sim:
+
+- **Frames (SOLVED):** sim `get_body_state` poses are WORLD frame; `panda_link0` is at the
+  world origin but rotated 180° about z (`quat xyzw=[0,0,1,0]`). So `base=(-wx,-wy,wz)`.
+  `mile_franka/envs/ros_backend.py` now transforms reads→base and body-sets→world. EE read
+  from body `panda_hand` (panda_hand_tcp / fingers are NOT get_body_state bodies → return 0;
+  use TF `panda_link0→panda_hand_tcp` for the true TCP).
+- **Position tracking (SOLVED):** with defaults the EE droops/biases (~10 cm y error).
+  Setting `pos_stiff=3000`, `translational_clip=0.1`, `ns_stiff_q1_to_4=0`,
+  `ns_stiff_q5_to_7=0`, `translational_Ki=30` gives TCP tracking within ~1–2 cm in all axes
+  (settle ~4 s). Nullspace stiffness was the main source of the lateral bias.
+- **Wrist orientation (OPEN):** getting the gripper to point straight down (approach
+  (0,0,-1)) is unreliable. The achieved orientation is gain/config-dependent and slow to
+  converge; an orientation sweep under the final gains found nothing closer than ~0.67 of
+  unit distance to down (best near `Rx-135`). The earlier "[-0.707,0,0,0.707] → down" result
+  held only because nullspace(=2) was pinning the home posture, not because the orientation
+  command tracked. NEXT: raise `rot_stiff`/`rotational_Ki` AND hold each pose long enough to
+  converge (the 10 Hz moving-target rollout never lets orientation settle), or set a known
+  initial joint config, or accept a fixed non-vertical approach. Until this is solved the
+  scripted policy aligns over the cube in XY but cannot reliably grasp/stack.
+- **Param knobs** live on node `/custom_cartesian_impedance_controller`; settable at runtime
+  via `ros2 param set` (reset on relaunch — bake into a launch/param override, not by forking
+  franka_bringup).
+
+## 2026-06-16 RESOLVED: scripted expert stacks in sim
+
+Root cause of all the "soft arm / weird pose / no grasp" symptoms: the cartesian impedance
+controller activates with its equilibrium target defaulting to the origin (0,0,0) and yanks
+the arm into the base, jamming it at a joint limit. Orientation was never the issue
+(DOWN_QUAT=[1,0,0,0] is correct; gives approach (0,0,-1) at a sane config).
+
+Fix: the Cartesian controller should be started or cycled **inactive -> active** before a
+new rollout. In `on_activate()` the controller captures the current EE pose as its desired
+pose; after that the backend commands a bounded move to home. This discards stale targets
+and gives one reset/startup path for demo collection and learned-policy inference.
+`mile_franka/launch/franka_sim_stacking.launch.py` provides that inactive controller
+lifecycle for the sim scene; `MultipandaRosBackend.reset()` owns the activate-at-current
+then move-home sequence. On real hardware, use the same contract against the hucebot
+controller, but require operator approval before activation/motion. With the sim, the arm
+holds the hardware home (joints [0,-0.785,0,-2.356,0,1.571,0.785], EE base
+(0.307,0,0.487), gripper straight down), drift ~1mm.
+
+Working recipe (`scripts/franka_sim_grasp_demo.py`): gains pos_stiff=4000,
+translational_clip=0.5, translational_Ki=30, rot_stiff=800, ns_stiff_q1_to_4=1.0,
+ns_stiff_q5_to_7=0.5; cubes at base x=0.45, y=+-0.12; grasp descend to TCP z~0.035
+(cube center), place at z~0.095 (one cube up); Grasp action width=0 force=40 epsilon 0.08.
+Result: top cube stacked on bottom (dz=0.06, xy<0.03). Video output_dir/grasp_demo3.mp4.
+
+Backend reset now uses the safe multipanda sequence: deactivate the Cartesian controller
+to discard any stale equilibrium target -> unpause -> force gripper open -> run
+`move_to_start_example_controller` to the canonical joint ready pose -> randomize cubes ->
+activate Cartesian (its `on_activate()` captures the current EE pose) -> command home
+through a slow Cartesian interpolation. Do **not** use MuJoCo `/reset` for arm homing in
+this ROS 2 stack: `mujoco_ros2_control::Reset()` is a no-op, and `mujoco_ros`'s ROS 2
+initial-joint loader is NYI. The launch-time `initial_positions` xacro argument is the
+reliable fresh-sim start pose; `move_to_start_example_controller` is the reliable runtime
+posture recovery. Real hardware follows the same "discard stale target, hold current pose,
+then bounded move" contract, but with operator approval and joint/workspace validation
+before any motion. Remaining work: the MILE delta-action policy must descend to
+cube-center using the same gains.
+
+## 2026-06-16 — Docker image + sim demo collection bringup
+
+**Image build findings:**
+- `USER root` required: base image (`hucebot:franka-humble`) runs as non-root; pip fails without it.
+- `xvfb` missing from base image: added `apt-get install -y xvfb` to Dockerfile for headless GLFW rendering.
+- Docker `RUN` steps need explicit `source /opt/ros/humble/setup.bash && source /home/user/humble_ws/install/setup.bash` — `bash -lc` does not source `.bashrc`.
+- Dep coexistence confirmed: `numpy==2.2.6` works with `gymnasium==0.29.1`; no `numpy<2` pin needed.
+
+**FrankaEnv delta rollout:**
+- Rollout script updated to save per-episode video files (`ep0.mp4`, `ep1.mp4`, …) with success filtering and retry logic.
+- Default changed to `mediocre=False` (expert demos) with `--require_success true`.
+- Full success verification deferred to live user run; ros_backend.py not modified.
+
+**MILE iterative run:**
+- `config_franka.json` updated to `Franka-Stack-Sim-v0`; all paths confirmed relative to `scripts/`.
+- Full `make mile` run deferred to user; pipeline structure verified (no autonomous rollout with `auto_eval: false`).

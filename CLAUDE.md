@@ -53,25 +53,32 @@ python scripts/collect_synthetic_interventions.py \
   --env_name peg-insert-side-v2 --n_episodes 20 \
   --rollout_policy <p> --intervention_policy <p> --mental_model <p> --save_path <p>
 
-# --- Franka block-stacking (headless: fake backend, no ROS/MuJoCo/GPU/hardware) ---
-python scripts/smoke_franka_env.py                 # env reset/step/success smoke test
-python scripts/build_base_policy.py                # scripted demos -> BC -> mediocre base policy (-> trained_models/franka/base_policy)
-cd scripts && python train_mile.py --config ../config_franka.json && cd ..  # iterative MILE, scripted "human"
+# --- Franka block-stacking (single sim path, all in the MILE-on-multipanda image) ---
+make build && make up         # build the image, start the persistent `sim` service
+make sim-up                   # launch the multipanda MuJoCo stacking sim headless
+make collect                  # successful FrankaEnv rollouts -> per-episode MP4s + sim_demos.npz
+make base-policy              # BC-train the mediocre base policy from sim_demos.npz
+make mile                     # iterative MILE run (config_franka.json, Franka-Stack-Sim-v0)
+make shell                    # interactive in-container shell (env sourced)
 ```
 
-The `cd scripts` is required for the Franka run: `config_franka.json` uses paths relative
-to `scripts/` (e.g. `policy_path: "../trained_models/franka/base_policy"`,
-`save.outdir: "../output_dir/franka"`), matching `build_base_policy.py`'s default save
-location. That config is the headless end-to-end gate (acceptance gate 6): `mode:
-iterative`, `collector: real` + `intervener: scripted` (the `ScriptedIntervener` stands in
-for a human, no device needed), `rollout.auto_eval: false`, `num_rounds: 2`,
-`episodes_per_round: 3`.
+The `config_franka.json` targets `Franka-Stack-Sim-v0` and runs in-container via `make mile`
+against a live `make sim-up`: `mode: iterative`, `collector: real` + `intervener: scripted`
+(the `ScriptedIntervener` stands in for a human, no device needed), `rollout.auto_eval: false`,
+`num_rounds: 2`, `episodes_per_round: 3`. The fake env (`Franka-Stack-Fake-v0`) is retained
+only for import-level checks, not as a pipeline gate.
 
 There is no test suite, linter, or build step. The smoke scripts above are the de-facto
 tests for the Franka path; run them after touching `mile_franka/`. `config.json` /
 `config_franka.json` are the single source of run configuration (env, modes,
 policy/mental-model types and paths, logging, save, rollout, **`collector`**,
 **`intervener`**, **`rollout.auto_eval`**).
+
+For `Franka-Stack-Sim-v0`, the task geometry differs from the headless fake env
+(`cube_size=0.06`, `table_z=0.0`, matching the multipanda stacking scene). Scripted
+policies/interveners must take `env.unwrapped.config`; otherwise they silently target the
+fake-env cube heights. `train_mile.py`, `build_base_policy.py`, and
+`franka_sim_rollout_record.py` follow this rule.
 
 ## Architecture (big picture)
 
@@ -143,7 +150,7 @@ imports and the smoke scripts run with no ROS installed.
 - **`mile_franka/teleop/`** — `TeleopDevice`/`TeleopReading` ABCs (`base.py`);
   `SpaceMouseDevice` (`spacemouse.py`, injectable raw reader so it loads without hardware).
 - **`mile_franka/policies/`** — `ScriptedStackPolicy` (`scripted.py`, mediocre state machine
-  over GT poses); `build_actor_critic_policy`/`train_bc` (`bc.py`, MILE-arch policy + imitation
+  over GT poses; pass the active env's `StackTaskConfig` for sim/hardware); `build_actor_critic_policy`/`train_bc` (`bc.py`, MILE-arch policy + imitation
   BC); `collect_scripted_demos` (`demos.py`).
 - **`mile_franka/collect.py`** — `Collector` (replaces `collect_synthetic_data`; returns the
   same `(dataset, mean_score, mean_success)` tuple) + `ScriptedIntervener` (headless scripted
