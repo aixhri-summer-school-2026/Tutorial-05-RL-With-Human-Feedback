@@ -87,17 +87,20 @@ and `TeleopIntervener.intervene` returns `(action, intervene, done)` straight fr
   phase (c) is a drop-in (**forward-compat**: do not bake SpaceMouse-only assumptions into the
   mapping — keep the `TeleopDevice.read()` contract device-agnostic).
 
-### 5.4 A genuinely mediocre base policy (resolve the review decision)
+### 5.4 Two collect modes — mediocre (base policy) and perfect (reference)
 
-The docker `make collect` trains the base policy on **successful expert** demos
-(`--mediocre false --require_success true`) → likely too competent. MILE needs a base policy that
-**starts the task but cannot reliably finish** (parent spec §5.5).
+Resolved: there are **two** collect verbs, not one.
+- **`make collect-mediocre`** (`--mediocre true --require_success false`) → `sim_demos_mediocre.npz`.
+  This **feeds the base policy** (`make base-policy` consumes it), giving the deliberately mediocre
+  policy MILE needs — one that starts the task but cannot reliably finish (parent spec §5.5).
+- **`make collect-expert`** (`--mediocre false --require_success true`) → `sim_demos_expert.npz`.
+  Perfect, successful-only demos kept as a **reference/upper-bound** (e.g. an expert BC policy to
+  compare the MILE-improved policy against, or eval seed). Not the base policy.
 
-Plan: **measure** the current BC base policy's sim success rate. If it is not clearly mediocre
-(rule of thumb: well below ~60% and visibly failing the precision step), deliberately degrade it
-via the spec's mechanisms — collect demos from the **mediocre** scripted policy (`--mediocre true`,
-relax `--require_success`), or inject a fixed wrong release-height/offset + action noise — until the
-base policy obviously needs help. Document the chosen knob and the resulting success rate.
+After training, **measure** the base policy's sim success rate to confirm it is clearly mediocre
+(well below ~60%, visibly failing the precision step). If the mediocre scripted demos still yield
+too-competent a policy, increase the degradation (more action noise / a fixed wrong release-height
+offset in the mediocre scripted policy). Document the resulting success rate.
 
 ### 5.5 `COST_LOOKUP` calibration
 
@@ -127,9 +130,9 @@ on puck-deflection past deadband the human action overrides (ν=1), else the pol
 
 ## 8. Open decisions (for the user)
 
-1. **Mediocre base policy strategy** — keep BC-from-expert but verify it is already mediocre enough,
-   or switch to mediocre demos / inject degradation? (Recommendation: measure first, degrade only if
-   needed.)
+1. ~~Mediocre base policy strategy~~ — **resolved (§5.4):** two collect modes; base policy trains on
+   `collect-mediocre`, `collect-expert` kept as a reference. Still measure the result to confirm it
+   is mediocre enough.
 2. **Live-render transport** — X11 passthrough (default; needs an attached display on the lab box)
    or VNC-over-Xvfb (for a headless server)? Depends on your lab box.
 3. **GPU** — is there an NVIDIA GPU on the lab box (hardware GL + faster training), or do we stay on

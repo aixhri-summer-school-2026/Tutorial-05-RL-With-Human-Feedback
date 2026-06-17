@@ -56,8 +56,9 @@ python scripts/collect_synthetic_interventions.py \
 # --- Franka block-stacking (single sim path, all in the MILE-on-multipanda image) ---
 make build && make up         # build the image, start the persistent `sim` service
 make sim-up                   # launch the multipanda MuJoCo stacking sim headless
-make collect                  # successful FrankaEnv rollouts -> per-episode MP4s + sim_demos.npz
-make base-policy              # BC-train the mediocre base policy from sim_demos.npz
+make collect-mediocre         # MEDIOCRE rollouts -> sim_demos_mediocre.npz (feeds the base policy)
+make collect-expert           # PERFECT successful-only rollouts -> sim_demos_expert.npz (reference)
+make base-policy              # BC-train the mediocre base policy from sim_demos_mediocre.npz
 make mile                     # iterative MILE run (config_franka.json, Franka-Stack-Sim-v0)
 make shell                    # interactive in-container shell (env sourced)
 ```

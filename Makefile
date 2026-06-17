@@ -7,7 +7,7 @@ RUN      = $(DC) exec sim bash -lc '$(ENVSH) && $(1)'
 RUND     = $(DC) exec -d sim bash -lc '$(ENVSH) && $(1)'
 TS      := $(shell date -u +%Y%m%dT%H%M%S)
 
-.PHONY: build up down shell sim-up collect base-policy mile
+.PHONY: build up down shell sim-up collect-mediocre collect-expert base-policy mile
 
 build:                       ## build the image
 	$(DC) build
@@ -23,17 +23,25 @@ shell:                       ## interactive shell, env sourced, cd'd into the re
 
 sim-up:                      ## launch the stacking sim headless (detached)
 	$(call RUND,bash scripts/sim_up.sh)
-	@echo "sim launching headless; give it ~10s, then check: make collect"
+	@echo "sim launching headless; give it ~10s, then check: make collect-mediocre"
 
-collect:                     ## collect successful demos -> per-episode MP4s + sim_demos.npz
+collect-mediocre:            ## MEDIOCRE demos (feeds the base policy) -> sim_demos_mediocre.npz
+	$(call RUN,python3 scripts/franka_sim_rollout_record.py \
+	    --episodes 3 --mediocre true --require_success false \
+	    --out_dir output_dir/franka/rollouts_mediocre_$(TS) \
+	    --data output_dir/franka/sim_demos_$(TS).npz && \
+	  cp output_dir/franka/sim_demos_$(TS).npz output_dir/franka/sim_demos_mediocre.npz)
+
+collect-expert:              ## PERFECT (successful-only) demos -> sim_demos_expert.npz
 	$(call RUN,python3 scripts/franka_sim_rollout_record.py \
 	    --episodes 3 --mediocre false --require_success true \
-	    --out_dir output_dir/franka/rollouts_$(TS) \
+	    --out_dir output_dir/franka/rollouts_expert_$(TS) \
 	    --data output_dir/franka/sim_demos_$(TS).npz && \
-	  cp output_dir/franka/sim_demos_$(TS).npz output_dir/franka/sim_demos.npz)
+	  cp output_dir/franka/sim_demos_$(TS).npz output_dir/franka/sim_demos_expert.npz)
 
-base-policy:                 ## BC-train the base policy from the collected sim demos
-	$(call RUN,python3 scripts/build_base_policy.py --demos output_dir/franka/sim_demos.npz \
+base-policy:                 ## BC-train the (mediocre) base policy from mediocre demos
+	$(call RUN,python3 scripts/build_base_policy.py \
+	  --demos output_dir/franka/sim_demos_mediocre.npz \
 	  --save_path trained_models/franka/base_policy)
 
 mile:                        ## iterative MILE run against the live sim

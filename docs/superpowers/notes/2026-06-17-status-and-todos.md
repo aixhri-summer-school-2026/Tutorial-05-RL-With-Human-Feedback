@@ -26,10 +26,11 @@ path must be config + re-tune, never a rewrite.
    N-round sim run hasn't been executed. The `output_dir/franka/policy`/`mental_model` artifacts
    are from the earlier fake-env run, not sim. When you run it, confirm gate 5 (success rate
    improves across rounds) and that no autonomous rollout fires (`auto_eval: false`).
-3. **Base-policy "mediocre" decision.** `make collect` uses `--mediocre false --require_success true`
-   → a *competent* base policy, contradicting spec §5.5 (deliberately mediocre). Measure the BC
-   policy's sim success rate; if it is too high, deliberately degrade it (fixed offset / release-high
-   / action noise) so interventions matter. Decide and document.
+3. **Base-policy "mediocre" decision — RESOLVED.** Two collect verbs now exist:
+   `make collect-mediocre` (`--mediocre true --require_success false` → `sim_demos_mediocre.npz`,
+   feeds the base policy) and `make collect-expert` (`--mediocre false --require_success true` →
+   `sim_demos_expert.npz`, kept as a perfect/reference set). `make base-policy` trains from the
+   mediocre set. Still measure the trained base policy's sim success rate to confirm it is mediocre.
 4. **Fix the contradictory note.** The 2026-06-16 bring-up note says "ros_backend.py not modified /
    no offset fix needed" — false; the code has the `O_T_EE` offset fix. Correct it.
 5. **rclpy context fragility.** Repeated `make mile` needs `make down && make up` (stale context after
