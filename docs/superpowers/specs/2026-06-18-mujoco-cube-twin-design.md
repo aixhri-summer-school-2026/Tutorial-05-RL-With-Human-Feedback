@@ -46,6 +46,7 @@ satisfied by construction:
 - **Cube bodies/joints:** `bottom_cube`/`top_cube`, each with a free joint
   (`bottom_cube_joint`/`top_cube_joint`). Body names match `BOTTOM_CUBE`/`TOP_CUBE` pose keys.
 - **Arm joints:** `panda_joint1..7`, fingers `panda_finger_joint1`/`panda_finger_joint2`.
+- **`/joint_states` confirmed from `multipanda_ros2`** (`franka_bringup/launch/real/franka_cartesian_impedance_gripper_action.launch.py`): a `joint_state_publisher` merges `franka/joint_states` (arm, `panda_joint1..7` from `franka_control2_node`) and `panda_gripper/joint_states` (fingers `${arm_id}_finger_joint1/2`) and publishes the combined set on `/joint_states` at 30 Hz. With `arm_id="panda"` (single-FR3 default) the names match the MuJoCo `panda.xml` exactly, so the twin needs **no name translation** — a direct name→qpos-address map. Unknown/namespaced names are simply skipped (arm stays at rest), so a different `arm_id` degrades gracefully.
 - **Scene loading:** `stacking_scene.xml` uses relative includes (`panda.xml`, `meshdir="assets"`)
   and must sit beside `panda.xml` in `franka_description/mujoco/franka/` at load time. `sim_up.sh`
   copies it there at sim launch; the real path never runs `sim_up.sh`, so the twin must do the
@@ -68,8 +69,9 @@ Single standalone script `scripts/view_cubes_mujoco.py`, reusing existing layers
      (`Pose`, base frame) for `bottom_cube`/`top_cube`. Reuses the existing pose layer; no new
      pose code.
    - Subscription to `/joint_states` (`sensor_msgs/JointState`); cache latest position keyed by
-     joint name. *(CONFIRM@bringup: the real controller's joint-states topic and joint names;
-     default `/joint_states` with `panda_joint1..7` + `panda_finger_joint1/2`.)*
+     joint name. Topic/names confirmed from `multipanda_ros2` (see Verified facts): merged arm +
+     gripper at 30 Hz, names matching the MuJoCo model. Topic is a `--joint-states-topic` CLI
+     arg defaulting to `/joint_states` so a namespaced graph can override it.
 3. **Update loop (~30 Hz):**
    - `rclpy.spin_once(node, timeout_sec=...)` to process tf + joint_states callbacks.
    - **Arm qpos:** for each cached joint name that exists in the model, write
@@ -127,7 +129,8 @@ mirrors pose state into a passive window.
 
 ## Open confirmations for bring-up (France lab)
 
-- `CONFIRM@bringup`: real controller's joint-states topic name and joint naming (default
-  `/joint_states`, `panda_joint1..7`, `panda_finger_joint1/2`).
+- `CONFIRM@bringup`: the France lab's `arm_id` (assumed `panda`). If different, pass
+  `--joint-states-topic` and expect the arm to stay at rest until names match. Topic `/joint_states`
+  itself is confirmed from the `multipanda_ros2` real launch.
 - `CONFIRM@bringup`: the `cube_center_pose()` `half_edge` sign — this twin is the intended visual
   test for it.
