@@ -41,3 +41,18 @@ def test_joint_writes_maps_known_and_skips_unknown():
     assert by_adr[a1] == 0.5
     assert by_adr[a2] == -0.3
     assert len(writes) == 2  # unknown "ghost" skipped
+
+
+def test_resolve_scene_path_copies_assets(tmp_path, monkeypatch):
+    import mile_franka.viz.mujoco_twin as mt
+
+    dest = tmp_path / "mujoco" / "franka"
+    dest.mkdir(parents=True)
+    # Stand in for the real franka_description location (avoids needing ament/ROS).
+    monkeypatch.setattr(mt, "_franka_description_franka_dir", lambda: str(dest))
+
+    scene = mt.resolve_scene_path()
+
+    assert scene == str(dest / "stacking_scene.xml")
+    assert (dest / "stacking_scene.xml").exists()
+    assert (dest / "stacking_objects.xml").exists()
