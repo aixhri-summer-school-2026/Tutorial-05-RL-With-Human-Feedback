@@ -25,10 +25,25 @@ services:
     volumes:
       - ..:/home/user/mile-code            # live host edits in dev
       - /tmp/.X11-unix:/tmp/.X11-unix      # host X socket for sim-gui live window
+      - /dev/bus/usb:/dev/bus/usb          # Intel RealSense (serial 217222067236) libusb enumeration
     devices:
       - /dev/hidraw0:/dev/hidraw0          # SpaceMouse (3Dconnexion) — verify node with: lsusb | grep -i 3dconnex; ls -l /dev/hidraw*
-      - /dev/input/js0:/dev/input/js0    # gamepad (Xbox/PS) — verify node with: ls -l /dev/input/js*; ls -l /dev/input/event*
+      # Gamepad nodes — comment out if the controller is unplugged (compose hard-requires every
+      # listed device, so an absent node blocks container start). Verify: ls -l /dev/input/js*
+      - /dev/input/js0:/dev/input/js0          # gamepad (Xbox 360 pad)
       - /dev/input/event20:/dev/input/event20  # Xbox 360 controller SDL evdev node
-    #   - /dev/video0:/dev/video0          # camera (France) — uncomment on hardware
+      # Intel RealSense D415 UVC video nodes (third-person eye-to-hand camera).
+      # The sparse set (3,5,8-11) is normal — the D415 exposes color, depth, and IR
+      # metadata nodes; the exact minor numbers depend on udev enumeration order.
+      # video0/video1 are a ZED 2i (unrelated); do NOT pass them through.
+      - /dev/video3:/dev/video3
+      - /dev/video5:/dev/video5
+      - /dev/video8:/dev/video8
+      - /dev/video9:/dev/video9
+      - /dev/video10:/dev/video10
+      - /dev/video11:/dev/video11
+    device_cgroup_rules:
+      - 'c 81:* rmw'                       # video4linux (RealSense UVC) — survives replug to new minors
+      - 'c 189:* rmw'                      # usb (RealSense libusb)
     gpus: all                              # NVIDIA hardware GL + faster torch
     command: sleep infinity
