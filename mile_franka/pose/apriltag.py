@@ -89,10 +89,17 @@ class AprilTagPoseSource(ObjectPoseSource):
 def _build_tf2_lookup(node) -> TfLookup:
     """Default tf2-backed lookup. Imported lazily so the module loads without ROS."""
     import rclpy
+    from rclpy.duration import Duration
     from tf2_ros import Buffer, TransformListener
 
-    buffer = Buffer()
+    buffer = Buffer(cache_time=Duration(seconds=10))
     TransformListener(buffer, node)
+
+    # Prime the listener: spin enough for subscriptions to connect and for the latched
+    # /tf_static publisher to deliver camera->base. Without this warm-up the first
+    # lookup_transform(…, Time()) call can fail even when the data is on the wire.
+    for _ in range(10):
+        rclpy.spin_once(node, timeout_sec=0.05)
 
     def lookup(base_frame: str, tag_frame: str):
         rclpy.spin_once(node, timeout_sec=0.02)
