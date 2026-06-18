@@ -1,4 +1,4 @@
-# Phase (a): Real Human-in-the-Loop with SpaceMouse on the Sim Robot
+# Phase (a): Real Human-in-the-Loop with SpaceMouse / Gamepad on the Sim Robot
 
 **Date:** 2026-06-17
 **Author:** rayray2002
@@ -41,8 +41,9 @@ These must be true before the SpaceMouse work is meaningful (see status/TODOs do
 ## 4. Scope
 
 **In scope:** live MuJoCo rendering; SpaceMouse device passthrough + read; `intervener: spacemouse`
-wiring verification; mediocre base policy; `COST_LOOKUP` calibration; an N-round run measured for
-improvement.
+wiring verification; **a gamepad (Xbox/PS) joystick as an alternate teleop device (§5.6)** — the
+device the original MILE paper used; mediocre base policy; `COST_LOOKUP` calibration; an N-round
+run measured for improvement.
 **Out of scope:** AprilTag/real-FR3/Vive (phases b/c); any change to the abstract teleop/intervener
 interfaces (they already work — this phase only exercises them).
 
@@ -110,17 +111,62 @@ intervention rate** and adjust `[cost, cdf_scale]` so the computational model's 
 when the human actually took over. Record the tuned values (they are re-tuned again on the real FR3
 in phase b, but a sim-calibrated starting point de-risks that).
 
+### 5.6 Gamepad joystick variant (`intervener: joystick`)
+
+The original MILE paper drove interventions with a **gamepad**, not a SpaceMouse. Supporting one
+here gives a second real-human device on the *same* loop and a familiar control scheme. Because the
+teleop layer is already device-agnostic (`TeleopDevice.read()` → `TeleopReading(action, intervene,
+done)`, adapted by `TeleopIntervener`), this is **one new device class + one wiring branch**, with
+**no change** to the abstract interfaces, the `Collector`, or the Box dataset.
+
+- **New unit `mile_franka/teleop/joystick.py` — `JoystickDevice(TeleopDevice)`.** Mirrors
+  `SpaceMouseDevice`'s structure exactly: an **injectable raw reader** so the mapping logic loads and
+  tests with no hardware; the default reader lazily `import pygame` (already in
+  `docker/requirements-mile.lock.txt`, `pygame==2.6.1` — **no new dependency**), runs
+  `pygame.init()` / `pygame.joystick.init()`, and opens joystick `0`. Constructor args:
+  `translation_scale` (default `0.02` m/unit, matching SpaceMouse), `deadband` (default `0.1`), and
+  **configurable button/axis indices** (pads differ) with Xbox defaults.
+- **Mapping (clutch semantics, Xbox layout defaults):**
+  | Input | Effect |
+  |---|---|
+  | **RB / right bumper (hold)** | clutch engaged |
+  | Left stick X / Y | `dx`, `dy` (× `translation_scale`, deadband-gated) |
+  | Right stick Y (or a trigger axis) | `dz` (× `translation_scale`, deadband-gated) |
+  | **A button (hold)** | gripper close (`+1`); released → open (`-1`) |
+  | **Start button** | `done=True` |
+- **ν = clutch OR motion (resolved).** `intervene` is True when the clutch is held **OR** any mapped
+  axis exceeds the deadband **OR** the gripper button is held — a superset of `SpaceMouseDevice`'s
+  `moved or gripper_close` rule, plus an explicit clutch button for deliberate takeovers. When no
+  signal is present, `intervene=False` and the action is zeroed. (This is more forgiving than
+  clutch-only; if accidental stick drift triggers spurious ν=1 during a session, raise `deadband` or
+  switch to clutch-only — a one-line change.) Output is the same `[dx, dy, dz, gripper]` 4-DoF array
+  and `TeleopReading`, so the collector and dataset schema are byte-for-byte identical to SpaceMouse.
+- **Wiring — `scripts/train_mile.py`:** add a third branch next to the existing two:
+  `elif which == 'joystick': from mile_franka.teleop.joystick import JoystickDevice;
+  intervener = TeleopIntervener(JoystickDevice())`. `config_franka.json` stays `spacemouse`;
+  selecting the gamepad is a one-word config edit.
+- **Passthrough + sanity check.** pygame's SDL joystick backend reads `/dev/input/event*` (and/or
+  `/dev/input/js0`). Add a **commented** device mapping in `docker/docker-compose.yml` (alongside the
+  hidraw SpaceMouse line) so it is config-only, not a rebuild, and a `make joystick-check` one-liner
+  mirroring `make spacemouse-check` that prints nonzero deflection / button state when the pad is
+  moved. **Forward-compat:** keep the mapping device-agnostic — do not bake gamepad-only assumptions
+  into the `TeleopReading` contract; Vive (phase c) remains a drop-in alongside SpaceMouse and this.
+
 ## 6. Data flow (unchanged from the existing collector)
 
-`make sim-gui` (live window) → `make mile` with `intervener: spacemouse`. The base policy drives;
-on puck-deflection past deadband the human action overrides (ν=1), else the policy acts (ν=0); the
+`make sim-gui` (live window) → `make mile` with `intervener: spacemouse` **or `joystick`** (same
+loop, swappable device). The base policy drives; on puck-deflection past deadband (SpaceMouse) or
+clutch-hold / stick-deflection (gamepad) the human action overrides (ν=1), else the policy acts
+(ν=0); the
 `Collector` records the full Box dataset every step; `InterventionTrainer` retrains; repeat N rounds.
 `rollout.auto_eval: false` stays — no autonomous execution.
 
 ## 7. Acceptance gates
 
 1. **Live view:** `make sim-gui` shows a live MuJoCo window of the stacking scene.
-2. **Device read:** the SpaceMouse sanity check prints nonzero deflection inside the container.
+2. **Device read:** the SpaceMouse sanity check (`make spacemouse-check`) **and** the gamepad
+   sanity check (`make joystick-check`) each print nonzero deflection / button state inside the
+   container. Either device satisfies gates 4–5.
 3. **Mediocre base policy:** measured sim success rate confirms it fails often enough to warrant
    intervention (§5.4).
 4. **Human intervention recorded:** a `make mile` round with the human shows ν toggling with puck
