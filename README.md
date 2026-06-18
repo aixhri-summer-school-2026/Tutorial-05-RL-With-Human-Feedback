@@ -71,7 +71,8 @@ Everything above runs headless on the host conda env. To run the **full human-in
   `make build` then uses the classic Docker builder (`DOCKER_BUILDKIT=0`) on purpose: BuildKit would try to *pull* this local-only base from Docker Hub and fail with `pull access denied … hucebot:franka-humble`. Confirm the base is present with `docker images | grep hucebot`.
 - For the live window: an X server on the host, with the container allowed to use it. Once per login: `xhost +local:root`.
 - GPU is optional. `gpus: all` in `docker/docker-compose.yml` gives hardware GL + faster training; CPU-only works on software GL (~14 FPS).
-- A teleop device for the human-in-the-loop step: a 3Dconnexion SpaceMouse **or** an Xbox/PS gamepad. Uncomment its device line in `docker/docker-compose.yml` — `/dev/hidraw0` for the SpaceMouse, `/dev/input/js0` + `/dev/input/event0` for the gamepad (verify the node with `ls -l /dev/input/js* /dev/hidraw*`).
+- A teleop device for the human-in-the-loop step: a 3Dconnexion SpaceMouse **or** an Xbox/PS gamepad. Uncomment its device line in `docker/docker-compose.yml` — `/dev/hidraw0` for the SpaceMouse, `/dev/input/js0` + `/dev/input/event*` for the gamepad (verify the node with `ls -l /dev/input/js* /dev/hidraw*`).
+- For the real-camera path: an Intel RealSense D415 (serial 217222067236). The docker-compose already lists the video nodes and USB passthrough — verify with `lsusb | grep RealSense` and check that the listed `/dev/video*` minors exist (`ls -l /dev/video*`).
 
 **Steps:**
 
@@ -87,6 +88,7 @@ make sim-up            # headless; or `make sim-gui` for a live window (needs xh
 make collect-mediocre  # -> output_dir/franka/sim_demos_mediocre.npz
 make base-policy       # BC-trains the mediocre base policy from those demos
 make eval-base         # (optional) measure the base policy's sim success rate
+make pose-test         # run 11 pose-layer unit tests (no ROS/hardware needed)
 
 # 4. Verify your teleop device reads inside the container
 make spacemouse-check  # SpaceMouse: push the puck, expect nonzero deflection
@@ -102,7 +104,11 @@ make mile              # human overrides when the policy is about to fail; repea
 
 ### Toward the real robot
 
-The real backend (hucebot's multipanda_ros2 controller docker), the MuJoCo cube assets, and the Vive/AprilTag swap are gated on hardware bring-up — see the [bring-up checklist](docs/superpowers/notes/2026-06-15-phase2-bringup-checklist.md) and resolve the `CONFIRM@bringup:` markers (`grep -rn CONFIRM@bringup mile_franka`).
+The real backend (hucebot's multipanda_ros2 controller docker), the MuJoCo cube assets, and the Vive/AprilTag swap are gated on hardware bring-up — see the [bring-up checklist](docs/superpowers/notes/2026-06-15-phase2-bringup-checklist.md) and the [status & TODOs](docs/superpowers/notes/2026-06-17-status-and-todos.md). Resolve the remaining `CONFIRM@bringup:` markers (`grep -rn CONFIRM@bringup mile_franka`).
+
+**AprilTag pose pipeline — DONE (2026-06-18):** RealSense D415 color-only 640x480@15Hz, apriltag_ros tag36h11 detection, tf2 chain `panda_link0 → tag36h11:0` resolving, `AprilTagPoseSource` returning cube-center poses with <0.2mm stability. `make pose-test` runs 11 unit tests with no ROS/hardware needed. `make apriltag-up` launches the camera + detection inside the container. Docker passthrough for USB + video devices configured in `docker/docker-compose.yml`.
+
+**Remaining for real MILE:** camera calibration (`calibrate_camera.py`), controller bring-up confirmation (FR3 + hucebot controller), real env builder (`Franka-Stack-Real-v0`), real config (`config_franka_real.json`), real eval script. Full details in the [status doc](docs/superpowers/notes/2026-06-17-status-and-todos.md) §Phase (b).
 
 ---
 

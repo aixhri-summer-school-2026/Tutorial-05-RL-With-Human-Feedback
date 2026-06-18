@@ -62,19 +62,22 @@ make base-policy              # BC-train the mediocre base policy from sim_demos
 make mile                     # iterative MILE run (config_franka.json, Franka-Stack-Sim-v0)
 make shell                    # interactive in-container shell (env sourced)
 make joystick-check           # print live gamepad axes/buttons (sanity check)
+make pose-test                # run 11 pose-layer unit tests (no ROS/hardware needed)
+make apriltag-up              # (in-container) launch D415 + apriltag_ros + calibration static tf
 ```
 
 The `config_franka.json` targets `Franka-Stack-Sim-v0` and runs in-container via `make mile`
-against a live `make sim-up`: `mode: iterative`, `collector: real` + `intervener: scripted`
-(the `ScriptedIntervener` stands in for a human, no device needed), `rollout.auto_eval: false`,
-`num_rounds: 2`, `episodes_per_round: 3`. The fake env (`Franka-Stack-Fake-v0`) is retained
-only for import-level checks, not as a pipeline gate.
-
-There is no test suite, linter, or build step. The smoke scripts above are the de-facto
-tests for the Franka path; run them after touching `mile_franka/`. `config.json` /
+against a live `make sim-up`: `mode: iterative`, `collector: real` + `intervener: joystick`
+(human-in-the-loop with an Xbox gamepad), `rollout.auto_eval: false`,
+`num_rounds: 5`, `episodes_per_round: 3`, `num_epochs: 500`. The fake env (`Franka-Stack-Fake-v0`)
+is retained only for import-level checks, not as a pipeline gate. `config.json` /
 `config_franka.json` are the single source of run configuration (env, modes,
 policy/mental-model types and paths, logging, save, rollout, **`collector`**,
 **`intervener`**, **`rollout.auto_eval`**).
+
+There is a **pose-layer test suite**: `make pose-test` runs 11 unit tests (calibration,
+AprilTag offset, AprilTagPoseSource, RosPoseStampedSource) with no ROS/hardware needed.
+Run it after touching the pose layer.
 
 Cubes are **5 cm everywhere** (`cube_size=0.05`: fake-env default, sim, and real). For
 `Franka-Stack-Sim-v0` the table geometry still differs from the headless fake env
@@ -94,7 +97,8 @@ the policy.
   distribution. `COST_LOOKUP` maps each env name to `[cost, cdf_scale]` hyperparameters;
   **every env used in training/collection must have an entry here or the trainer raises.**
   The Franka task has entries for both `Franka-Stack-Fake-v0` and `Franka-Stack-Sim-v0`
-  (both `[250, 200.0]`, seeded from `pick-place-v2` and meant to be tuned on hardware).
+  (both `[70, 100.0]`, retuned from the `pick-place-v2` seed `[250, 200.0]` to reflect a
+  lower intervention threshold; still to be calibrated against observed human rate on hardware).
 - **`mile/algorithm.py`** — `InterventionTrainer` jointly optimizes the **policy** `π_θ`
   and the **mental model** `π̃_ξ` (what the human believes the robot will do). Continuous
   loss = BCE on the intervention flag ν **+** Gaussian NLL of the human action *only on
@@ -148,8 +152,12 @@ imports and the smoke scripts run with no ROS installed.
   `info['success']`); `registration.py` (`register_franka_envs()`, `make_franka_env()`,
   `FAKE_ENV_ID="Franka-Stack-Fake-v0"`); `ros_backend.py` (`MultipandaRosBackend`, real,
   **bring-up-gated** — joins hucebot's controller docker DDS graph).
-- **`mile_franka/pose/`** — `Pose`/`ObjectPoseSource` ABCs (`base.py`); `MujocoGtPoseSource`
-  (`mujoco_gt.py`, real, bring-up-gated).
+- **`mile_franka/pose/`** — `Pose`/`ObjectPoseSource` ABCs (`base.py`);
+  `AprilTagPoseSource` (`apriltag.py`, tf2-backed, primary real-cube source — live-verified
+  with D415 on 2026-06-18); `RosPoseStampedSource` (`ros_posestamped.py`, generic
+  FoundationPose-ready seam); `CameraCalibration` (`calibration.py`, camera→base extrinsics
+  file format + YAML load + static-transform args); `MujocoGtPoseSource` (`mujoco_gt.py`,
+  sim-only); `cube_center_pose()` pure half-edge offset helper.
 - **`mile_franka/teleop/`** — `TeleopDevice`/`TeleopReading` ABCs (`base.py`);
   `JoystickDevice` (`joystick.py`, pygame gamepad — **the default dev teleop device**, ν via a
   stateful clutch-toggle segment) and `SpaceMouseDevice` (`spacemouse.py`, kept as an alternative,
