@@ -8,7 +8,7 @@ RUND     = $(DC) exec -d sim bash -lc '$(ENVSH) && $(1)'
 TS      := $(shell date -u +%Y%m%dT%H%M%S)
 DEMOS   ?= output_dir/franka/sim_demos_mediocre.npz   ## base-policy input; override: make base-policy DEMOS=path.npz
 
-.PHONY: build up down shell sim-up sim-gui collect-mediocre collect-expert base-policy mile spacemouse-check joystick-check eval-base eval-mile
+.PHONY: build up down shell sim-up sim-gui collect-mediocre collect-expert base-policy mile spacemouse-check joystick-check eval-base eval-mile pose-test apriltag-up
 
 build:                       ## build the image (classic builder: base hucebot:franka-humble is local-only, not on a registry)
 	DOCKER_BUILDKIT=0 $(DC) build
@@ -68,3 +68,9 @@ eval-mile:                   ## run the MILE-trained policy in sim -> success ra
 	$(call RUN,python3 scripts/eval_base_policy_sim.py --episodes 10 \
 	  --policy output_dir/franka/policy \
 	  --video_dir output_dir/franka/eval_mile_videos_$(TS))
+
+pose-test:                   ## run the pose-layer unit tests (no ROS/hardware needed)
+	pytest tests/test_calibration.py tests/test_apriltag_pose.py tests/test_ros_posestamped.py -v
+
+apriltag-up:                 ## launch realsense2_camera + apriltag_ros + calibration static tf (in container)
+	ros2 launch $(PWD)/launch/apriltag_realsense.launch.py
