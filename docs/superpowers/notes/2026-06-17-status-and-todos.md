@@ -114,6 +114,8 @@ gamepad (`intervener: joystick`) as the dev teleop device alongside the SpaceMou
 - [ ] Run N=5 rounds with a human on the gamepad; show success rate improves across rounds.
 
 ## Phase (b) — real FR3 + gamepad + AprilTag (lab)
+**Full plan: [2026-06-18-phase-b-real-fr3-apriltag.md](../plans/2026-06-18-phase-b-real-fr3-apriltag.md).**
+Cost re-tuning on hardware: [cost tuning guide](2026-06-18-cost-tuning-guide.md).
 - Generic `RosPoseStampedSource(topic)` → `AprilTagPoseSource` (pupil-apriltags, webcam),
   returning `Pose` in robot base frame.
 - `scripts/calibrate_camera.py` — **eye-to-hand**, Charuco-on-gripper, `cv2.calibrateHandEye` →
