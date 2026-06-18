@@ -1,5 +1,6 @@
 gymnasium==0.29.1
 numpy
+mujoco==2.3.7
 wandb
 torch
 stable-baselines3<=2.3.2
