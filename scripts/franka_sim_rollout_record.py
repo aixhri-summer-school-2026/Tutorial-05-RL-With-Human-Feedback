@@ -104,12 +104,17 @@ def main():
                     help="seconds to hold the reset scene before policy actions")
     ap.add_argument("--video_end_hold", type=float, default=0.5,
                     help="seconds to keep recording after the episode ends")
+    ap.add_argument("--max_steps", type=int, default=None,
+                    help="override env max_steps (default: use env value, 10 000 for sim)")
     args = ap.parse_args()
 
     max_attempts = args.max_attempts if args.max_attempts > 0 else 3 * args.episodes
 
     register_franka_envs()
     env = FlattenObservation(FrameStack(gym.make(SIM_ENV_ID), 4))
+    if args.max_steps is not None:
+        env.unwrapped.config.max_steps = args.max_steps
+        print(f"max_steps overridden to {args.max_steps}")
     rng = np.random.default_rng(args.seed)
     policy = ScriptedStackPolicy(getattr(env.unwrapped, "config", None),
                                  mediocre=args.mediocre)

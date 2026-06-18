@@ -36,7 +36,7 @@ sim-gui:                     ## launch the stacking sim with a LIVE window on th
 collect-mediocre:            ## MEDIOCRE demos (feeds the base policy) -> sim_demos_mediocre.npz
 	$(DC) exec $(DISP) sim bash -lc '$(ENVSH) && python3 scripts/franka_sim_rollout_record.py \
 	    --episodes 100 --mediocre true --require_success true --max_attempts 150 \
-	    --video_start_hold 0.5 --video_end_hold 0.5 \
+	    --max_steps 500 --video_start_hold 0.5 --video_end_hold 0.5 \
 	    --out_dir output_dir/franka/rollouts_mediocre_$(TS) \
 	    --data output_dir/franka/sim_demos_$(TS).npz && \
 	  cp output_dir/franka/sim_demos_$(TS).npz output_dir/franka/sim_demos_mediocre.npz'
@@ -44,7 +44,7 @@ collect-mediocre:            ## MEDIOCRE demos (feeds the base policy) -> sim_de
 collect-expert:              ## PERFECT (successful-only) demos -> sim_demos_expert.npz
 	$(DC) exec $(DISP) sim bash -lc '$(ENVSH) && python3 scripts/franka_sim_rollout_record.py \
 	    --episodes 100 --mediocre false --require_success true \
-	    --video_start_hold 0.5 --video_end_hold 0.5 \
+	    --max_steps 500 --video_start_hold 0.5 --video_end_hold 0.5 \
 	    --out_dir output_dir/franka/rollouts_expert_$(TS) \
 	    --data output_dir/franka/sim_demos_$(TS).npz && \
 	  cp output_dir/franka/sim_demos_$(TS).npz output_dir/franka/sim_demos_expert.npz'
