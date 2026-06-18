@@ -108,3 +108,71 @@ cube-center using the same gains.
 - `config_franka.json` updated to `Franka-Stack-Sim-v0`; all paths confirmed relative to `scripts/`.
 - Full `make mile` run deferred to user; pipeline structure verified (no autonomous rollout with `auto_eval: false`).
 - Known issue: rclpy "publisher's context is invalid" can occur when `docker exec` reuses a container after a previous rclpy node crashed (SIGKILL leaves stale context). Workaround: restart the `mile_sim` container (`make down && make up`) before running `make mile`.
+
+## 2026-06-18 AprilTag-over-ROS pose pipeline bring-up (D415 + apriltag_ros)
+
+**Hardware:** Intel RealSense D415 (serial 217222067236), USB 2.1 port, third-person
+eye-to-hand tripod mount. AprilTags (tag36h11, 36mm) on cube faces. Host: Ubuntu 22.04,
+no ROS installed — everything runs in the `mile:franka-humble` docker container with
+`network_mode: host`.
+
+### Camera stream
+
+- **Profile:** 640x480@15Hz, RGB8, color-only (depth + IR disabled — the D415 is on a
+  USB 2.1 bus, and enabling depth/IR starves the bus causing frame timeouts).
+- **Topic:** `/camera/camera/color/image_raw` (realsense2_camera publishes on
+  `<camera_name>/color/...` with `camera_name` defaulting to the node name `camera`).
+- **Serial:** Must be passed as a STRING (`ParameterValue(serial_no, value_type=str)` in
+  the launch file) — realsense2_camera rejects all-digit serials parsed as int.
+- **Video minors:** The D415 exposes 6 UVC nodes; minor numbers change after USB reset
+  (observed: 3,5,8,9,10,11 → 2,4,5,6,7,9 after driver crash). `device_cgroup_rules:
+  'c 81:* rmw'` ensures replug doesn't block container access, but the `devices:` list
+  in docker-compose must match the current minors at compose-up time.
+
+### AprilTag detection
+
+- **Tag 0 (bottom cube):** Detected at decision_margin ~135 (very strong). Two
+  detections per frame (multi-scale; harmless duplicate).
+- **Tag 1 (top cube):** Not detected — cube needs to be positioned with its tag facing
+  the camera.
+- **Topic:** `/detections` (apriltag_msgs/AprilTagDetectionArray), frame_id
+  `camera_color_optical_frame`.
+- **Config:** `config/apriltag.yaml` with family=36h11, size=0.036, ids=[0,1],
+  frames=["tag36h11:0","tag36h11:1"].
+
+### tf2 transform chain
+
+- **Static transform:** `panda_link0 → camera_color_optical_frame` published from
+  `config/camera_calib.yaml` (currently identity placeholder — real calibration pending
+  the `calibrate_camera.py` capture script).
+- **Dynamic transform:** `camera_color_optical_frame → tag36h11:0` published by
+  apriltag_ros on `/tf`.
+- **Full chain:** `panda_link0 → tag36h11:0` resolves via tf2_echo and
+  `AprilTagPoseSource.get_pose()` after warm-up (see below).
+- **tf2 warm-up bug:** `_build_tf2_lookup` originally spun only once for 20ms after
+  creating the `TransformListener`, which was insufficient for the listener to receive
+  the latched `/tf_static` message. Fixed by spinning 10×50ms before the first lookup
+  (commit 1a3910d).
+
+### AprilTagPoseSource validation
+
+- **Stability:** <0.2mm std dev over 5 samples at 1Hz — well within 5-10mm target.
+- **Offset direction:** CONFIRMED CORRECT. The half_edge offset (0.025m) is applied
+  along the tag's +z axis, which points into the cube (away from the camera). The
+  reported cube center moves from tag_z=0.728 to cube_z=0.714 (offset matches the tag's
+  tilted +z axis projection). The `CONFIRM@bringup` note in `apriltag.py` about the
+  offset sign is RESOLVED — no sign flip needed for this tag mount orientation.
+- **Full accuracy check:** Deferred until real camera→base calibration exists. Current
+  poses are in camera frame (identity calibration), so only relative/camera-frame
+  accuracy is validated.
+
+### Docker configuration notes
+
+- **Video devices are volatile:** The `devices:` list in docker-compose must list the
+  current `/dev/video*` minors at compose-up time. A script (`make detect-video`) could
+  auto-detect RealSense minors, but for now manually update the list if the container
+  fails to start with "no such file or directory."
+- **`/dev/bus/usb` mount + `c 189:* rmw`:** Required for libusb device enumeration
+  (librealsense uses libusb to set camera parameters before streaming via V4L2).
+- **`c 81:* rmw`:** Allows access to video minors that weren't explicitly listed in
+  `devices:` (survives replug).
