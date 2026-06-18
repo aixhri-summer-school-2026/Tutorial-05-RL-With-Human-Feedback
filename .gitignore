@@ -16,3 +16,4 @@ output_dir/
 trained_models/
 trained_models.zip
 MUJOCO_LOG.TXT
+config/camera_calib.yaml

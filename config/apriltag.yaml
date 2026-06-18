@@ -1,0 +1,12 @@
+# config/apriltag.yaml — params for the apriltag_ros (ROS 2) detector node.
+# Frame names "<family>:<id>" must match CUBE_TAG_FRAMES in mile_franka/pose/apriltag.py.
+apriltag:
+  ros__parameters:
+    family: 36h11
+    size: 0.036            # printed tag size (m) from generate_cube_tags.py
+    detector:
+      threads: 2
+      decimate: 2.0
+    tag:
+      ids: [0, 1]
+      frames: ["tag36h11:0", "tag36h11:1"]

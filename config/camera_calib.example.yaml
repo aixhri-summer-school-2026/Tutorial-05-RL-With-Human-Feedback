@@ -1,0 +1,10 @@
+# config/camera_calib.example.yaml
+# Copy to config/camera_calib.yaml and fill with calibrate_camera.py output (eye-to-hand).
+# camera_to_base: 4x4 homogeneous transform, p_base = T @ p_cam (camera frame in base frame).
+# The identity below is a PLACEHOLDER and will not give correct poses.
+intrinsics: {fx: 615.0, fy: 615.0, cx: 320.0, cy: 240.0}
+camera_to_base:
+  - [1.0, 0.0, 0.0, 0.0]
+  - [0.0, 1.0, 0.0, 0.0]
+  - [0.0, 0.0, 1.0, 0.0]
+  - [0.0, 0.0, 0.0, 1.0]
