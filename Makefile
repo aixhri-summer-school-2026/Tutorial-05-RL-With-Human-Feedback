@@ -8,7 +8,7 @@ RUND     = $(DC) exec -d sim bash -lc '$(ENVSH) && $(1)'
 TS      := $(shell date -u +%Y%m%dT%H%M%S)
 DEMOS   ?= output_dir/franka/sim_demos_mediocre.npz   ## base-policy input; override: make base-policy DEMOS=path.npz
 
-.PHONY: build up down shell sim-up sim-gui collect-mediocre collect-expert base-policy mile spacemouse-check eval-base
+.PHONY: build up down shell sim-up sim-gui collect-mediocre collect-expert base-policy mile spacemouse-check joystick-check eval-base
 
 build:                       ## build the image
 	$(DC) build
@@ -56,6 +56,9 @@ mile:                        ## iterative MILE run against the live sim
 
 spacemouse-check:            ## print live SpaceMouse deflection (sanity check; Ctrl-C to stop)
 	$(call RUN,python3 scripts/spacemouse_check.py)
+
+joystick-check:              ## print live gamepad axes/buttons (sanity check; Ctrl-C to stop)
+	$(call RUN,python3 scripts/joystick_check.py)
 
 eval-base:                   ## run the BC base policy in sim -> success rate + per-episode videos
 	$(call RUN,python3 scripts/eval_base_policy_sim.py --episodes 10 \
