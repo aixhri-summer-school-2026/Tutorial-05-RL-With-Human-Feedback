@@ -67,6 +67,7 @@ make apriltag-up              # (in-container) launch D415 + apriltag_ros + cali
 make calibrate-camera         # (in-container) eye-to-hand calibration capture -> camera_calib.yaml
 make mile-real                # (in-container) iterative MILE on real FR3 (config_franka_real.json)
 make eval-real                # (in-container) policy eval on real FR3
+make view-twin                # (in-container, host display) read-only MuJoCo twin: cubes from AprilTag, arm from /joint_states; safe to run alongside mile-real/eval-real
 ```
 
 The `config_franka.json` targets `Franka-Stack-Sim-v0` and runs in-container via `make mile`
