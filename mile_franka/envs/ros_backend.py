@@ -467,9 +467,9 @@ class MultipandaRosBackend(RobotBackend):
         goal = self._Grasp.Goal()
         goal.width = float(self._gripper_width)
         goal.speed = 0.1
-        goal.force = 40.0
-        goal.epsilon.inner = 0.02
-        goal.epsilon.outer = 0.02
+        goal.force = 80.0   # increased from 40 N — cube was slipping under light grip
+        goal.epsilon.inner = 0.005
+        goal.epsilon.outer = 0.005
         future = self._grasp.send_goal_async(goal)
         self._rclpy.spin_until_future_complete(self._node, future, timeout_sec=2.0)
         if not wait_result or not future.done():
@@ -481,7 +481,9 @@ class MultipandaRosBackend(RobotBackend):
         self._rclpy.spin_until_future_complete(self._node, result_future, timeout_sec=4.0)
 
     def set_gripper(self, command: float) -> None:
-        self._set_gripper(command, wait_result=command <= 0)
+        # Wait for both close and open to complete — without waiting on close the EE
+        # moves before the gripper has physically shut, causing the cube to slip.
+        self._set_gripper(command, wait_result=True)
 
     def get_ee_position(self) -> np.ndarray:
         """Return the controller's O_T_EE position (panda_link0 frame).

@@ -15,3 +15,4 @@ logs/
 output_dir/
 trained_models/
 trained_models.zip
+MUJOCO_LOG.TXT

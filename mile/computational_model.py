@@ -17,8 +17,8 @@ COST_LOOKUP = {
     'pick-place-v2': [250, 200.0],
     'drawer-open-v2': [60, 75.0],
     'LunarLander-v2': [3, 1.0],
-    'Franka-Stack-Fake-v0': [250, 200.0],
-    'Franka-Stack-Sim-v0': [250, 200.0],
+    'Franka-Stack-Fake-v0': [70, 100.0],
+    'Franka-Stack-Sim-v0': [70, 100.0],
 }
 LOG_STD_MAX = 2
 LOG_STD_MIN = -20

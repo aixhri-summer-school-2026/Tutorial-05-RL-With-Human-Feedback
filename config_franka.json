@@ -1,6 +1,6 @@
 {
     "train": {
-        "num_epochs": 5,
+        "num_epochs": 500,
         "batch_size": 256,
         "lr": 0.0001,
         "lambda1": 1.0,
@@ -10,7 +10,7 @@
         "name": "mile-franka",
         "mode": "iterative",
         "collector": "real",
-        "intervener": "spacemouse",
+        "intervener": "joystick",
         "validate": { "enabled": false, "every_n_epochs": 100 },
         "logging": { "terminal_output_to_txt": false, "log_tb": false, "log_wandb": false },
         "save": {
@@ -27,7 +27,7 @@
         "policy_path": "../trained_models/franka/base_policy",
         "mental_model_type": "bc",
         "use_warm_start": false,
-        "num_rounds": 2,
+        "num_rounds": 5,
         "episodes_per_round": 3,
         "include_offline_dataset": false
     }

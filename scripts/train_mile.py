@@ -250,7 +250,16 @@ def iterative_training(config):
             intervener = TeleopIntervener(SpaceMouseDevice())
         elif which == 'joystick':
             from mile_franka.teleop.joystick import JoystickDevice
-            intervener = TeleopIntervener(JoystickDevice())
+            # Xbox 360: left-stick-forward=axis1(-=fwd), left-stick-left=axis0(-=left), right-stick-up=axis4(-=up)
+            # clutch=RB(5), gripper=A(0), done=Start(7)
+            intervener = TeleopIntervener(JoystickDevice(
+                ax_x=1, ax_x_sign=-1.0,
+                ax_y=0, ax_y_sign=-1.0,
+                ax_z=4, ax_z_sign=-1.0,
+                clutch_button=5, gripper_button=0, done_button=7, discard_button=6,
+                gripper_toggle=True,
+                translation_scale=0.2,
+            ))
         else:
             raise ValueError(f'Unknown intervener: {which}')
 
@@ -282,7 +291,8 @@ def iterative_training(config):
         print('Collecting intervention data...')
         if collector_type == 'real':
             additional_data, mean_score, mean_success_rate = real_collector.collect_intervention(
-                policy=trainer.policy, intervener=intervener, n_episodes=episodes_per_round)
+                policy=trainer.policy, intervener=intervener, n_episodes=episodes_per_round,
+                max_t=10_000)
         else:
             from collect_synthetic_interventions import collect_synthetic_data
             additional_data, mean_score, mean_success_rate = collect_synthetic_data(env=env,

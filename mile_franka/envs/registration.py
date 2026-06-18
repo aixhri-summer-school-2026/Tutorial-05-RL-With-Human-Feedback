@@ -33,7 +33,7 @@ def _build_sim_env(config: Optional[StackTaskConfig] = None) -> FrankaEnv:
         table_z=0.0,
         workspace_low=np.array([0.40, -0.18, 0.02], dtype=np.float32),
         workspace_high=np.array([0.75, 0.18, 0.40], dtype=np.float32),
-        max_steps=300,
+        max_steps=10_000,
     )
     backend = MultipandaRosBackend(
         config,

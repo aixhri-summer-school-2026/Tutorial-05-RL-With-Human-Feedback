@@ -25,6 +25,7 @@ class TeleopReading:
     action: np.ndarray
     intervene: bool
     done: bool
+    discard: bool = False
 
 
 class TeleopDevice(ABC):

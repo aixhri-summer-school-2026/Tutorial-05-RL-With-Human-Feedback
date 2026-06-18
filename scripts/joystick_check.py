@@ -26,12 +26,27 @@ def main() -> None:
         print(f"[fake] action={r.action} intervene={r.intervene} done={r.done}")
         return
 
-    dev = JoystickDevice()
-    print("Joystick open. Push the sticks / press buttons; Ctrl-C to stop.")
+    # Xbox 360: left-stick-forward=+x, left-stick-left=+y, right-stick-up=+z (axis4, -=up)
+    # RB=segment toggle, A=gripper, Start=done, Back=discard
+    dev = JoystickDevice(ax_x=1, ax_x_sign=-1.0, ax_y=0, ax_y_sign=-1.0,
+                         ax_z=4, ax_z_sign=-1.0, clutch_button=5, gripper_button=0,
+                         done_button=7, discard_button=6, gripper_toggle=True)
+    print("Xbox360: RB=segment  A=gripper  Start=done  Back=discard  Ctrl-C to stop")
+    prev_intervene = False
     try:
         while True:
             r = dev.read()
-            print(f"action={r.action} intervene={r.intervene} done={r.done}")
+            if r.intervene != prev_intervene:
+                print(f"  SEGMENT {'ON ' if r.intervene else 'OFF'}", flush=True)
+                prev_intervene = r.intervene
+            if r.intervene:
+                dx, dy, dz = r.action[0], r.action[1], r.action[2]
+                gripper = "close" if r.action[3] > 0 else "open"
+                print(f"  dx={dx:+.3f} dy={dy:+.3f} dz={dz:+.3f} gripper={gripper}")
+            if r.done:
+                print("  DONE")
+            if r.discard:
+                print("  DISCARD")
             time.sleep(0.05)
     except KeyboardInterrupt:
         pass
