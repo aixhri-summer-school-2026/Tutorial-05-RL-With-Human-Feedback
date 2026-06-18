@@ -8,7 +8,7 @@ RUND     = $(DC) exec -d sim bash -lc '$(ENVSH) && $(1)'
 TS      := $(shell date -u +%Y%m%dT%H%M%S)
 DEMOS   ?= output_dir/franka/sim_demos_mediocre.npz   ## base-policy input; override: make base-policy DEMOS=path.npz
 
-.PHONY: build up down shell sim-up sim-gui collect-mediocre collect-expert base-policy mile spacemouse-check joystick-check eval-base eval-mile pose-test apriltag-up
+.PHONY: build up down shell sim-up sim-gui collect-mediocre collect-expert base-policy mile mile-real spacemouse-check joystick-check eval-base eval-mile pose-test apriltag-up calibrate-camera eval-real
 
 build:                       ## build the image (classic builder: base hucebot:franka-humble is local-only, not on a registry)
 	DOCKER_BUILDKIT=0 $(DC) build
@@ -51,8 +51,11 @@ base-policy:                 ## BC-train the (mediocre) base policy offline; ove
 	  --demos $(DEMOS) --bc_batch_size 256 --bc_ent_weight 0.0 --eval_episodes 0 \
 	  --save_path trained_models/franka/base_policy)
 
-mile:                        ## iterative MILE run against the live sim
+mile:                        ## iterative MILE run in sim (config_franka.json)
 	$(call RUN,cd scripts && python3 train_mile.py --config ../config_franka.json)
+
+mile-real:                   ## iterative MILE run on the real FR3 (needs controller + apriltag-up running)
+	$(DC) exec sim bash -lc '$(ENVSH) && cd scripts && python3 train_mile.py --config ../config_franka_real.json'
 
 spacemouse-check:            ## print live SpaceMouse deflection (sanity check; Ctrl-C to stop)
 	$(call RUN,python3 scripts/spacemouse_check.py)
@@ -74,3 +77,9 @@ pose-test:                   ## run the pose-layer unit tests (no ROS/hardware n
 
 apriltag-up:                 ## launch realsense2_camera + apriltag_ros + calibration static tf (in container)
 	ros2 launch $(PWD)/launch/apriltag_realsense.launch.py
+
+calibrate-camera:            ## run eye-to-hand camera calibration (needs controller + apriltag-up running)
+	$(DC) exec -e DISPLAY=$$DISPLAY sim bash -lc '$(ENVSH) && python3 scripts/calibrate_camera.py'
+
+eval-real:                   ## run policy eval on the real FR3 (needs controller + apriltag-up running)
+	$(DC) exec -e DISPLAY=$$DISPLAY sim bash -lc '$(ENVSH) && python3 scripts/eval_base_policy_real.py'

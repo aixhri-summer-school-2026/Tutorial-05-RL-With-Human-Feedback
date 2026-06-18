@@ -62,8 +62,11 @@ make base-policy              # BC-train the mediocre base policy from sim_demos
 make mile                     # iterative MILE run (config_franka.json, Franka-Stack-Sim-v0)
 make shell                    # interactive in-container shell (env sourced)
 make joystick-check           # print live gamepad axes/buttons (sanity check)
-make pose-test                # run 11 pose-layer unit tests (no ROS/hardware needed)
+make pose-test                # run 20 pose-layer unit tests (no ROS/hardware needed)
 make apriltag-up              # (in-container) launch D415 + apriltag_ros + calibration static tf
+make calibrate-camera         # (in-container) eye-to-hand calibration capture -> camera_calib.yaml
+make mile-real                # (in-container) iterative MILE on real FR3 (config_franka_real.json)
+make eval-real                # (in-container) policy eval on real FR3
 ```
 
 The `config_franka.json` targets `Franka-Stack-Sim-v0` and runs in-container via `make mile`
@@ -75,9 +78,9 @@ is retained only for import-level checks, not as a pipeline gate. `config.json` 
 policy/mental-model types and paths, logging, save, rollout, **`collector`**,
 **`intervener`**, **`rollout.auto_eval`**).
 
-There is a **pose-layer test suite**: `make pose-test` runs 11 unit tests (calibration,
-AprilTag offset, AprilTagPoseSource, RosPoseStampedSource) with no ROS/hardware needed.
-Run it after touching the pose layer.
+There is a **pose-layer test suite**: `make pose-test` runs 20 unit tests (calibration,
+AprilTag offset, AprilTagPoseSource, RosPoseStampedSource, hand-eye solve) with no
+ROS/hardware needed. Run it after touching the pose layer.
 
 Cubes are **5 cm everywhere** (`cube_size=0.05`: fake-env default, sim, and real). For
 `Franka-Stack-Sim-v0` the table geometry still differs from the headless fake env

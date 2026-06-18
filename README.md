@@ -88,7 +88,13 @@ make sim-up            # headless; or `make sim-gui` for a live window (needs xh
 make collect-mediocre  # -> output_dir/franka/sim_demos_mediocre.npz
 make base-policy       # BC-trains the mediocre base policy from those demos
 make eval-base         # (optional) measure the base policy's sim success rate
-make pose-test         # run 11 pose-layer unit tests (no ROS/hardware needed)
+make pose-test         # run 20 pose-layer unit tests (no ROS/hardware needed)
+
+# --- Real FR3 path (hardware needed) ---
+make apriltag-up       # launch D415 + AprilTag detection + calibration static tf
+make calibrate-camera  # eye-to-hand calibration capture → camera_calib.yaml
+make mile-real         # iterative MILE on the real FR3
+make eval-real         # policy eval on the real FR3
 
 # 4. Verify your teleop device reads inside the container
 make spacemouse-check  # SpaceMouse: push the puck, expect nonzero deflection
