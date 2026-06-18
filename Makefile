@@ -5,6 +5,9 @@ DC      := docker compose -f docker/docker-compose.yml
 ENVSH   := source scripts/in_container_env.sh
 RUN      = $(DC) exec sim bash -lc '$(ENVSH) && $(1)'
 RUND     = $(DC) exec -d sim bash -lc '$(ENVSH) && $(1)'
+# Pass the host DISPLAY through so ffmpeg x11grab records from the same screen the
+# sim renders to.  Fall back to :99 (headless Xvfb) when the host has no X server.
+DISP     = -e DISPLAY=$${DISPLAY:-:99}
 TS      := $(shell date -u +%Y%m%dT%H%M%S)
 DEMOS   ?= output_dir/franka/sim_demos_mediocre.npz   ## base-policy input; override: make base-policy DEMOS=path.npz
 
@@ -31,20 +34,20 @@ sim-gui:                     ## launch the stacking sim with a LIVE window on th
 	$(DC) exec -e DISPLAY=$$DISPLAY sim bash -lc '$(ENVSH) && bash scripts/sim_gui.sh'
 
 collect-mediocre:            ## MEDIOCRE demos (feeds the base policy) -> sim_demos_mediocre.npz
-	$(call RUN,python3 scripts/franka_sim_rollout_record.py \
+	$(DC) exec $(DISP) sim bash -lc '$(ENVSH) && python3 scripts/franka_sim_rollout_record.py \
 	    --episodes 100 --mediocre true --require_success true --max_attempts 150 \
 	    --video_start_hold 0.5 --video_end_hold 0.5 \
 	    --out_dir output_dir/franka/rollouts_mediocre_$(TS) \
 	    --data output_dir/franka/sim_demos_$(TS).npz && \
-	  cp output_dir/franka/sim_demos_$(TS).npz output_dir/franka/sim_demos_mediocre.npz)
+	  cp output_dir/franka/sim_demos_$(TS).npz output_dir/franka/sim_demos_mediocre.npz'
 
 collect-expert:              ## PERFECT (successful-only) demos -> sim_demos_expert.npz
-	$(call RUN,python3 scripts/franka_sim_rollout_record.py \
+	$(DC) exec $(DISP) sim bash -lc '$(ENVSH) && python3 scripts/franka_sim_rollout_record.py \
 	    --episodes 100 --mediocre false --require_success true \
 	    --video_start_hold 0.5 --video_end_hold 0.5 \
 	    --out_dir output_dir/franka/rollouts_expert_$(TS) \
 	    --data output_dir/franka/sim_demos_$(TS).npz && \
-	  cp output_dir/franka/sim_demos_$(TS).npz output_dir/franka/sim_demos_expert.npz)
+	  cp output_dir/franka/sim_demos_$(TS).npz output_dir/franka/sim_demos_expert.npz'
 
 base-policy:                 ## BC-train the (mediocre) base policy offline; override input with DEMOS=path.npz
 	$(call RUN,python3 scripts/build_base_policy.py \
@@ -64,13 +67,13 @@ joystick-check:              ## print live gamepad axes/buttons (sanity check; C
 	$(call RUN,python3 scripts/joystick_check.py)
 
 eval-base:                   ## run the BC base policy in sim -> success rate + per-episode videos
-	$(call RUN,python3 scripts/eval_base_policy_sim.py --episodes 10 \
-	  --video_dir output_dir/franka/eval_videos_$(TS))
+	$(DC) exec $(DISP) sim bash -lc '$(ENVSH) && python3 scripts/eval_base_policy_sim.py --episodes 10 \
+	  --video_dir output_dir/franka/eval_videos_$(TS)'
 
 eval-mile:                   ## run the MILE-trained policy in sim -> success rate (compare with eval-base)
-	$(call RUN,python3 scripts/eval_base_policy_sim.py --episodes 10 \
+	$(DC) exec $(DISP) sim bash -lc '$(ENVSH) && python3 scripts/eval_base_policy_sim.py --episodes 10 \
 	  --policy output_dir/franka/policy \
-	  --video_dir output_dir/franka/eval_mile_videos_$(TS))
+	  --video_dir output_dir/franka/eval_mile_videos_$(TS)'
 
 pose-test:                   ## run the pose-layer unit tests (no ROS/hardware needed)
 	pytest tests/test_calibration.py tests/test_apriltag_pose.py tests/test_ros_posestamped.py -v
