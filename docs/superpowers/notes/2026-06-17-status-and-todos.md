@@ -13,6 +13,12 @@ path must be config + re-tune, never a rewrite.
 - Sim verified headless end-to-end (build→launch→render→data); waypoint grasp demo stacks.
 - Docker increment: image (`mile:franka-humble`), compose, Makefile verbs, `--demos` base policy,
   `config_franka.json`→`Franka-Stack-Sim-v0`. Dep coexistence confirmed (numpy 2.2.6 + gym 0.29.1).
+- **AprilTag-over-ROS pose pipeline (2026-06-18):** RealSense D415 (serial 217222067236)
+  color-only 640x480@15Hz, apriltag_ros tag36h11 detection, tf2 chain `panda_link0 →
+  tag36h11:0` resolving, `AprilTagPoseSource` returning cube-center poses with <0.2mm
+  stability. `RosPoseStampedSource` seam for FoundationPose. Docker passthrough with
+  `device_cgroup_rules` for USB + video4linux. 11 unit tests pass (`make pose-test`).
+  See `phase2-bringup-checklist.md` §2026-06-18 for the full bring-up report.
 - **Coherence gate solved:** EE read switched to the controller `O_T_EE` topic
   (`/cartesian_impedance/cartesian_pos_curr`), removing the ~0.103 m `panda_hand` offset that
   drove the arm underground before grasp; `franka_env.step` anchors the target to the actual EE.
@@ -116,18 +122,117 @@ gamepad (`intervener: joystick`) as the dev teleop device alongside the SpaceMou
 ## Phase (b) — real FR3 + gamepad + AprilTag (lab)
 **Design spec (for review): [2026-06-18-phase-b-real-fr3-apriltag-design.md](../specs/2026-06-18-phase-b-real-fr3-apriltag-design.md).**
 **Plan: [2026-06-18-phase-b-real-fr3-apriltag.md](../plans/2026-06-18-phase-b-real-fr3-apriltag.md).**
+**AprilTag pose plan: [2026-06-18-apriltag-ros-pose.md](../plans/2026-06-18-apriltag-ros-pose.md).**
 Cost tuning (sim + hardware) is **deferred** per the 2026-06-18 decision — go to the real robot
 now, return to [cost tuning](2026-06-18-cost-tuning-guide.md) later; measured improvement is a
-later milestone, not a Phase (b) gate. Open decisions for review live in §8 of the spec.
-- Generic `RosPoseStampedSource(topic)` → `AprilTagPoseSource` (pupil-apriltags, webcam),
-  returning `Pose` in robot base frame.
-- `scripts/calibrate_camera.py` — **eye-to-hand**, Charuco-on-gripper, `cv2.calibrateHandEye` →
-  shared `config/camera_calib.yaml` (intrinsics + camera→base).
-- Real env builder `Franka-Stack-Real-v0`: `MultipandaRosBackend` against the FR3,
-  `randomize_on_reset=False`, operator-gated human reset, bounded home, no sim `set_body_state`.
-- Confirm `DOWN_QUAT` on hardware (last `CONFIRM@bringup`); copy any differing controller
-  interface names into `ros_backend.py`.
-- Safety invariants on every real path: `rollout.auto_eval: false`, operator approval, bounded move.
+later milestone, not a Phase (b) gate.
+
+### Done (2026-06-18 — AprilTag-over-ROS pose pipeline)
+- [x] `CameraCalibration` + YAML loader + static-transform-args emission (`pose/calibration.py`)
+- [x] `cube_center_pose()` pure half-edge offset helper (`pose/apriltag.py`)
+- [x] `AprilTagPoseSource` with injectable tf2 lookup + staleness fallback (`pose/apriltag.py`)
+- [x] `RosPoseStampedSource` generic seam — FoundationPose-ready (`pose/ros_posestamped.py`)
+- [x] Calibration template (`config/camera_calib.example.yaml`) + apriltag config (`config/apriltag.yaml`)
+- [x] Launch file (`launch/apriltag_realsense.launch.py`): realsense2_camera + apriltag_ros + static tf
+- [x] Docker apt packages: ros-humble-realsense2-camera, ros-humble-apriltag-ros
+- [x] Make verbs: `make pose-test` (11 tests pass), `make apriltag-up`
+- [x] **LIVE BRING-UP VERIFIED:** D415 (serial 217222067236) color-only 640x480@15Hz, tag 0 detected
+  at decision_margin ~135, tf2 chain `panda_link0 → tag36h11:0` resolves, AprilTagPoseSource
+  returns cube-center poses with <0.2mm stability. Docker passthrough (USB + video nodes +
+  device_cgroup_rules) works. Findings recorded in `phase2-bringup-checklist.md`.
+- [x] tf2 warm-up bug found & fixed: `TransformListener` needs ~500ms priming after construction
+  or the first `lookup_transform` misses the latched `/tf_static` message.
+- [x] **CONFIRM@bringup offset sign RESOLVED:** the half_edge offset moves INTO the cube (correct
+  for this tag mount); no sign flip needed.
+- [x] Topics confirmed: `/camera/camera/color/image_raw`, `/detections`, `/tf`, `/tf_static`.
+
+### Remaining for real MILE (in dependency order)
+
+**1. Camera calibration** — `scripts/calibrate_camera.py` (separate follow-on plan).
+   Until this exists, `config/camera_calib.yaml` is the identity placeholder and all poses are
+   in camera frame, not robot base frame. This is the single hard blocker for base-frame accuracy.
+   - Eye-to-hand Charuco-on-gripper: move the arm through a calibration pattern, detect Charuco
+     corners, `cv2.calibrateHandEye` → `camera_to_base` in `config/camera_calib.yaml`.
+   - Prereq: the hucebot controller must be running on the FR3 so the gripper moves.
+
+**2. Controller bring-up confirmation** — start hucebot's multipanda_ros2 controller docker on the
+   FR3 control PC, join the DDS graph from our container (`network_mode: host`), and confirm:
+   - [ ] `ros2 node list` shows the controller, franka_gripper_node, move_to_start_example_controller
+   - [ ] `/cartesian_impedance/equilibrium_pose` topic exists (our command path)
+   - [ ] `/cartesian_impedance/cartesian_pos_curr` topic exists (our EE read path)
+   - [ ] `/franka_gripper_node/grasp` action exists (real gripper — currently `GRASP_ACTION` points
+     at the sim gripper; the `ros_backend.py` constructor accepts `grasp_action` as a param)
+   - [ ] `DOWN_QUAT` gives a down-facing wrist on the real FR3 (the last `CONFIRM@bringup` marker)
+   - [ ] `Q_HOME` (move_to_start joint config) clears the workspace
+
+**3. Real env builder** — `Franka-Stack-Real-v0` in `registration.py`. A `_build_real_env()`
+   function that wires:
+   - `MultipandaRosBackend(sim=False, randomize_on_reset=False, move_to_start_on_reset=True, ...)`
+   - `AprilTagPoseSource(half_edge=0.025)` as the object pose source
+   - `FrankaEnv(backend, pose_source, config, mode="real")` — `mode` affects success detection
+     (no GT cubes to check; success must be inferred from the pose source + gripper state)
+   - `max_steps` large (human-paced episodes), `action_scale` tuned for the real controller gains
+
+**4. Real config** — `config_franka_real.json`:
+   - `env_name: "Franka-Stack-Real-v0"`
+   - `intervener: "joystick"`, `collector: "real"`
+   - `rollout.auto_eval: false` (non-negotiable safety invariant)
+   - `num_rounds: 5`, `episodes_per_round: 3`, `num_epochs: 500`
+   - `COST_LOOKUP` entry for the real env (start from `[70, 100]`, calibrate against observed rate)
+
+**5. Real eval** — `scripts/eval_base_policy_real.py` (or adapt the existing eval script):
+   - Creates `Franka-Stack-Real-v0`, loads the policy, runs N episodes
+   - Human holds the joystick as safety monitor; intervenes only if the robot is about to fail
+   - Episode is a success if the robot stacks the cubes WITHOUT any human intervention
+   - `auto_eval` stays `false` — this is explicit eval, not autonomous
+
+**6. Real MILE training** — once all of the above exists:
+   ```bash
+   # On the FR3 control PC: start the hucebot controller docker
+   # On our machine:
+   make build && make up              # build image, start container
+   make shell                          # enter container
+   # Inside container:
+   make apriltag-up                    # launch camera + AprilTag detection
+   # In another shell inside container:
+   cd scripts && python3 train_mile.py --config ../config_franka_real.json
+   ```
+   The human holds the gamepad. Each round: the script collects `episodes_per_round` episodes
+   (human teleops each stack, intervening as needed), then trains the policy + mental model
+   jointly, then repeats. No autonomous rollout — the policy is never executed without the
+   human in the loop during training.
+
+### Eval on real Franka — explicit path (no training)
+
+To evaluate a pre-trained policy on hardware without running the full training loop:
+```bash
+# In-container, with controller + apriltag running:
+python3 scripts/eval_base_policy_real.py \
+  --policy trained_models/franka/policy \
+  --episodes 10 \
+  --video_dir output_dir/franka/real_eval_$(date -u +%Y%m%dT%H%M%S)
+```
+The script loads the policy, runs it on `Franka-Stack-Real-v0` for N episodes. The human
+holds the joystick as a safety dead-man: if the human presses the clutch (RB), the episode
+is marked as "intervened" (not a clean success). The success rate = (# episodes stacked
+without any human action) / N. Videos are recorded for post-hoc review.
+
+Until the real env builder exists, the closest thing you can do is:
+- **Verify the pose pipeline:** `make apriltag-up` then `ros2 run tf2_ros tf2_echo panda_link0 tag36h11:0`
+- **Verify the gamepad:** `make joystick-check`
+- **Verify the controller** (once connected): `ros2 topic echo /cartesian_impedance/cartesian_pos_curr`
+- **Sim rehearsal:** `make sim-up && make joystick-check` — run the full sim pipeline with the
+  gamepad to build muscle memory before going to hardware
+
+### Safety invariants (real path — never break these)
+- `rollout.auto_eval: false` — the policy is NEVER executed autonomously on hardware
+- Operator approval before any arm motion (the script prints what it's about to do and waits)
+- Bounded home: `move_to_start_on_reset=True` drives the arm to a known joint config BEFORE
+  activating the Cartesian controller (so the equilibrium is captured at a safe posture)
+- Gripper completes before EE moves (`set_gripper` waits for physical open/close)
+- EE target clamped to `workspace_low`/`workspace_high` (z floor protects the table)
+- DDS domain isolation: the real FR3 and our container share `network_mode: host`; verify
+  no other ROS nodes are accidentally commanding the same controller
 
 ## Phase (c) — France = Vive swap
 - `ViveDevice` (thin rclpy subscriber to hucebot `vive_controller` topics) — only France-only code.
