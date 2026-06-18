@@ -58,10 +58,12 @@ class MultipandaRosBackend(RobotBackend):
     """RobotBackend over a live multipanda_ros2 node (MuJoCo sim or hardware)."""
 
     def __init__(self, config: Optional[StackTaskConfig] = None,
+                 sim: bool = True,
                  base_frame: str = "panda_link0", ee_body: str = EE_BODY,
                  randomize_on_reset: bool = True,
                  controller_name: str = CONTROLLER_NAME,
                  move_to_start_controller: str = MOVE_TO_START_CONTROLLER,
+                 grasp_action: str = GRASP_ACTION,
                  activate_controller_on_reset: bool = True,
                  apply_sim_gains: bool = False,
                  reset_controller_target_on_reset: bool = False,
@@ -72,9 +74,17 @@ class MultipandaRosBackend(RobotBackend):
                  home_settle_s: float = 1.5):
         import rclpy
         from geometry_msgs.msg import PoseStamped
-        from mujoco_ros_msgs.srv import GetBodyState, SetBodyState, SetPause
         from franka_msgs.action import Grasp
         from rclpy.action import ActionClient
+
+        # sim=True joins the multipanda MuJoCo graph (mujoco_ros services for pause +
+        # ground-truth body poses); sim=False is the real-FR3 path: no mujoco_ros, the world
+        # is never paused or teleported, and object poses come from an external source
+        # (AprilTag) rather than get_body_state. Every mujoco-only call below is gated on this.
+        self.sim = bool(sim)
+        if not self.sim and randomize_on_reset:
+            raise ValueError("randomize_on_reset is sim-only (cannot teleport real cubes); "
+                             "the real env must place cubes via an operator-gated reset")
 
         self.config = config if config is not None else StackTaskConfig()
         self.base_frame = base_frame
@@ -96,22 +106,29 @@ class MultipandaRosBackend(RobotBackend):
         self._rclpy = rclpy
         self._node = rclpy.create_node("mile_franka_backend")
         self._PoseStamped = PoseStamped
-        self._SetBodyState = SetBodyState
-        self._SetPause = SetPause
         self._Grasp = Grasp
 
         self._pub = self._node.create_publisher(PoseStamped, EQUILIBRIUM_TOPIC, 10)
-        self._get_body = self._node.create_client(GetBodyState, GET_BODY_STATE_SRV)
-        self._set_body = self._node.create_client(SetBodyState, SET_BODY_STATE_SRV)
-        self._set_pause = self._node.create_client(SetPause, SET_PAUSE_SRV)
-        self._grasp = ActionClient(self._node, Grasp, GRASP_ACTION)
+        # CONFIRM@bringup: real franka_ros2 gripper grasp action name (sim default is the
+        # multipanda sim gripper node). franka_msgs/action/Grasp is the same message type.
+        self._grasp = ActionClient(self._node, Grasp, grasp_action)
 
-        required_clients = [(self._get_body, GET_BODY_STATE_SRV),
-                            (self._set_body, SET_BODY_STATE_SRV),
-                            (self._set_pause, SET_PAUSE_SRV)]
-        for client, name in required_clients:
-            if not client.wait_for_service(timeout_sec=15.0):
-                raise RuntimeError(f"multipanda service {name} not available")
+        # mujoco_ros services (pause + GT body poses) exist only in the sim graph.
+        self._get_body = self._set_body = self._set_pause = None
+        self._SetBodyState = self._SetPause = None
+        if self.sim:
+            from mujoco_ros_msgs.srv import GetBodyState, SetBodyState, SetPause
+            self._SetBodyState = SetBodyState
+            self._SetPause = SetPause
+            self._get_body = self._node.create_client(GetBodyState, GET_BODY_STATE_SRV)
+            self._set_body = self._node.create_client(SetBodyState, SET_BODY_STATE_SRV)
+            self._set_pause = self._node.create_client(SetPause, SET_PAUSE_SRV)
+            required_clients = [(self._get_body, GET_BODY_STATE_SRV),
+                                (self._set_body, SET_BODY_STATE_SRV),
+                                (self._set_pause, SET_PAUSE_SRV)]
+            for client, name in required_clients:
+                if not client.wait_for_service(timeout_sec=15.0):
+                    raise RuntimeError(f"multipanda service {name} not available")
 
         # Subscribe to the controller's EE pose (O_T_EE, already in panda_link0 frame).
         # Cached so get_ee_position() stays non-blocking.
@@ -340,7 +357,9 @@ class MultipandaRosBackend(RobotBackend):
         # Unpause the (paused-on-boot) sim. The sim ignores SetPause until its ros2_control
         # plugin is fully up, so verify the response and retry rather than silently leaving
         # the clock frozen (a frozen clock means step() commands never take effect).
-        self._unpause()
+        # Real hardware has no pause concept — skip.
+        if self.sim:
+            self._unpause()
 
         self._gripper_closed = True  # force an open command even if our proxy is stale
         self._set_gripper(-1.0, wait_result=True, force=True)
@@ -496,9 +515,14 @@ class MultipandaRosBackend(RobotBackend):
             self._spin_once_for_ee()
         if self._ee_curr_pose is not None:
             return self._ee_curr_pose.copy()
-        # Fallback: panda_hand is ~0.103 m above the controller EE frame.
-        return self.get_body_pose(self.ee_body)[:3] - np.array([0.0, 0.0, 0.103],
-                                                                dtype=np.float32)
+        # Sim fallback: panda_hand is ~0.103 m above the controller EE frame. Real has no
+        # get_body_state — the O_T_EE topic is the only EE source, so require it.
+        if self.sim:
+            return self.get_body_pose(self.ee_body)[:3] - np.array([0.0, 0.0, 0.103],
+                                                                    dtype=np.float32)
+        raise RuntimeError(
+            f"EE pose not received on {EE_CURR_TOPIC}; required on real (no get_body_state "
+            "fallback). Check the controller is publishing O_T_EE.")
 
     def get_gripper_width(self) -> float:
         return float(self._gripper_width)
