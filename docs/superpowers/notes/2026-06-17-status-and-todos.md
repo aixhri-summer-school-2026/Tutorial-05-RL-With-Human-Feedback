@@ -70,29 +70,29 @@ path must be config + re-tune, never a rewrite.
 5. **rclpy context fragility — DONE** (`88bf7cf`). Idempotent rclpy init/shutdown; `make mile`
    reruns no longer need `make down && make up`.
 
-## 2026-06-18 progress — human-in-the-loop teleop (Phase a, in flight; uncommitted WIP)
-Focus shifted to making real human teleop data collection actually usable, using an Xbox
-gamepad (`intervener: joystick`) as the dev teleop device alongside the SpaceMouse path.
+## 2026-06-18 progress — human-in-the-loop teleop (Phase a, committed)
+Teleop data collection with the Xbox gamepad (`intervener: joystick`) is the dev teleop device
+alongside the SpaceMouse fallback.
 - **`make sim-gui`** (`50b596d`): live MuJoCo window over X11 + NVIDIA GL so the human can see
   when to intervene. **SpaceMouse** `/dev/hidraw` passthrough + `make spacemouse-check` (`34de862`).
   **Gamepad** `JoystickDevice` + `/dev/input` passthrough + `make joystick-check` (`a9ce719`…`13341fc`).
 - **Cold-start runbook** (`7368c5b`) and forced classic docker builder for the local hucebot base
   (`a3d666c`) so a fresh machine can rebuild.
-- **Collector reworked for a real human** (`collect.py`, uncommitted): stateful **segment toggle**
+- **Collector reworked for a real human** (`collect.py`): stateful **segment toggle**
   (press clutch to start/stop recording an intervention; `intervene` holds across frames so the
   operator can plan), **idle-frame skipping** inside a segment (no do-nothing actions get logged as
   demos), **discard/retry** (Back button throws away a botched episode and re-resets without
   incrementing the count), gripper-state **sync from the policy** on segment entry, and verbose
   per-segment/per-step logging. New `TeleopReading.discard` field; intervener returns a 4-tuple
   `(action, intervene, done, discard)` — `ScriptedIntervener` updated to match.
-- **`JoystickDevice` hardened** (uncommitted): segment-toggle mode, gripper toggle (open/close on
+- **`JoystickDevice` hardened**: segment-toggle mode, gripper toggle (open/close on
   press, `nan` passthrough before first toggle), per-axis sign inversion, and **ghost+bounce button
   filtering** (`hold_confirm_s`, `debounce_s`) to reject phantom spikes/mechanical bounce. Xbox 360
   mapping wired in `train_mile.py`: dx=axis1(-fwd), dy=axis0(-left), dz=axis4(-up), clutch=RB(5),
   gripper=A(0), done=Start(7), discard=Back(6), `translation_scale=0.2`. New `scripts/joystick_identify.py`.
 - **`COST_LOOKUP` retuned** for both Franka envs `[250,200]→[70,100]` (lower cost ⇒ model expects the
   human to intervene more readily; seeded guess, still to be calibrated against observed human rate).
-- **Grasp robustness** (`ros_backend.py`, uncommitted): grasp force 40→80 N, epsilon 0.02→0.005, and
+- **Grasp robustness** (`ros_backend.py`): grasp force 40→80 N, epsilon 0.02→0.005, and
   `set_gripper` now **waits for both open and close** to physically complete before the EE moves
   (cube was slipping when the arm moved before the gripper shut).
 - **Human-paced episodes**: `max_steps` 300→10_000 in the sim env + `max_t=10_000` in the collect
@@ -100,13 +100,12 @@ gamepad (`intervener: joystick`) as the dev teleop device alongside the SpaceMou
 - **`config_franka.json`**: `intervener: joystick`, `num_rounds 2→5`, `num_epochs 5→500`.
 
 ### Open before Phase (a) can be called done
-- **Commit the WIP above** (collect.py, joystick.py, base.py, ros_backend.py, registration.py,
-  train_mile.py, config_franka.json, computational_model.py, Makefile, compose, joystick_identify.py).
-- **Run the full iterative loop** with a human on the gamepad and show success rate improving across
+- [x] ~~Commit the WIP above~~ — all committed as of 2026-06-18.
+- [ ] **Run the full iterative loop** with a human on the gamepad and show success rate improving across
   rounds (finding #2 / gate 5), `auto_eval: false` confirmed (no autonomous rollout).
-- **Measure + record** the mediocre base-policy success rate (`make eval-base`).
-- **Calibrate `COST_LOOKUP`** `[70,100]` against the human intervention rate actually observed.
-- Confirm `num_epochs: 500` per round isn't overfitting the small per-round dataset.
+- [ ] **Measure + record** the mediocre base-policy success rate (`make eval-base`).
+- [ ] **Calibrate `COST_LOOKUP`** `[70,100]` against the human intervention rate actually observed.
+- [ ] Confirm `num_epochs: 500` per round isn't overfitting the small per-round dataset.
 
 ## Phase (a) — sim + SpaceMouse/gamepad  (in flight; see 2026-06-17-phase-a-sim-spacemouse-design.md)
 - [x] Live MuJoCo rendering (X11 passthrough, `make sim-gui`) so a human can see when to intervene.
@@ -165,28 +164,23 @@ later milestone, not a Phase (b) gate.
    - [ ] `DOWN_QUAT` gives a down-facing wrist on the real FR3 (the last `CONFIRM@bringup` marker)
    - [ ] `Q_HOME` (move_to_start joint config) clears the workspace
 
-**3. Real env builder** — `Franka-Stack-Real-v0` in `registration.py`. A `_build_real_env()`
-   function that wires:
-   - `MultipandaRosBackend(sim=False, randomize_on_reset=False, move_to_start_on_reset=True, ...)`
-   - `AprilTagPoseSource(half_edge=0.025)` as the object pose source
-   - `FrankaEnv(backend, pose_source, config, mode="real")` — `mode` affects success detection
-     (no GT cubes to check; success must be inferred from the pose source + gripper state)
-   - `max_steps` large (human-paced episodes), `action_scale` tuned for the real controller gains
+**3. Real env builder** — ✅ DONE (2026-06-18). `_build_real_env()` in `registration.py` wires
+   `MultipandaRosBackend(sim=False)` + `AprilTagPoseSource` + `FrankaEnv(mode="real")`.
+   Registered as `Franka-Stack-Real-v0`.
 
-**4. Real config** — `config_franka_real.json`:
-   - `env_name: "Franka-Stack-Real-v0"`
-   - `intervener: "joystick"`, `collector: "real"`
-   - `rollout.auto_eval: false` (non-negotiable safety invariant)
-   - `num_rounds: 5`, `episodes_per_round: 3`, `num_epochs: 500`
-   - `COST_LOOKUP` entry for the real env (start from `[70, 100]`, calibrate against observed rate)
+**4. Real config** — ✅ DONE (2026-06-18). `config_franka_real.json` with `env_name:
+   Franka-Stack-Real-v0`, `intervener: joystick`, `auto_eval: false`, `num_rounds: 5`,
+   `episodes_per_round: 3`, `num_epochs: 500`.
 
-**5. Real eval** — `scripts/eval_base_policy_real.py` (or adapt the existing eval script):
-   - Creates `Franka-Stack-Real-v0`, loads the policy, runs N episodes
-   - Human holds the joystick as safety monitor; intervenes only if the robot is about to fail
-   - Episode is a success if the robot stacks the cubes WITHOUT any human intervention
-   - `auto_eval` stays `false` — this is explicit eval, not autonomous
+**5. COST_LOOKUP** — ✅ DONE (2026-06-18). `Franka-Stack-Real-v0` entry `[70, 100]` added to
+   `computational_model.py`.
 
-**6. Real MILE training** — once all of the above exists:
+**6. Real eval** — ✅ DONE (2026-06-18). `scripts/eval_base_policy_real.py` written.
+   Operator-gated per-episode confirmations, no autonomous execution, policy runs
+   deterministically on `Franka-Stack-Real-v0`. No joystick integration (human supervises
+   externally + physical e-stop).
+
+**7. Real MILE training** — once calibration (item 1) and controller bring-up (item 2) exist:
    ```bash
    # On the FR3 control PC: start the hucebot controller docker
    # On our machine:
@@ -202,27 +196,24 @@ later milestone, not a Phase (b) gate.
    jointly, then repeats. No autonomous rollout — the policy is never executed without the
    human in the loop during training.
 
-### Eval on real Franka — explicit path (no training)
+### Eval on real Franka — explicit path (script exists, needs controller + calibration)
 
-To evaluate a pre-trained policy on hardware without running the full training loop:
 ```bash
 # In-container, with controller + apriltag running:
 python3 scripts/eval_base_policy_real.py \
   --policy trained_models/franka/policy \
-  --episodes 10 \
-  --video_dir output_dir/franka/real_eval_$(date -u +%Y%m%dT%H%M%S)
+  --episodes 10
 ```
-The script loads the policy, runs it on `Franka-Stack-Real-v0` for N episodes. The human
-holds the joystick as a safety dead-man: if the human presses the clutch (RB), the episode
-is marked as "intervened" (not a clean success). The success rate = (# episodes stacked
-without any human action) / N. Videos are recorded for post-hoc review.
+The script loads the policy, runs it on `Franka-Stack-Real-v0` for N episodes with
+operator-gated per-episode confirmations. The human stands at the robot and watches;
+if anything goes wrong they hit the physical e-stop. No autonomous execution —
+`auto_eval` is always `false` on hardware. Success = cube stacked without intervention.
 
-Until the real env builder exists, the closest thing you can do is:
+Until controller + calibration exist, the closest thing you can do:
 - **Verify the pose pipeline:** `make apriltag-up` then `ros2 run tf2_ros tf2_echo panda_link0 tag36h11:0`
 - **Verify the gamepad:** `make joystick-check`
 - **Verify the controller** (once connected): `ros2 topic echo /cartesian_impedance/cartesian_pos_curr`
-- **Sim rehearsal:** `make sim-up && make joystick-check` — run the full sim pipeline with the
-  gamepad to build muscle memory before going to hardware
+- **Sim rehearsal:** `make sim-up && make joystick-check` — practice with gamepad in sim
 
 ### Safety invariants (real path — never break these)
 - `rollout.auto_eval: false` — the policy is NEVER executed autonomously on hardware

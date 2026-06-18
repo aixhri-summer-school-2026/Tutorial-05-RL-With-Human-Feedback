@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""Run a policy on the real FR3 (Franka-Stack-Real-v0) and report success rate.
+
+**Hardware prerequisites:**
+- hucebot multipanda_ros2 controller docker running on the FR3 control PC
+- Our container on the same DDS graph (``make up`` with ``network_mode: host``)
+- ``make apriltag-up`` running (RealSense + AprilTag detection + calibration static tf)
+- Valid ``config/camera_calib.yaml`` from the calibration capture script
+- Operator present — this script moves the real arm on every reset
+
+**Safety:** ``auto_eval`` is always ``false`` on hardware. This script is **explicit
+human-supervised eval**: the operator stands at the robot, watches every episode, and
+hits the physical emergency stop if anything goes wrong. The arm moves to a known joint
+home on each reset, then to a Cartesian home above the workspace; the policy only
+commands small (≤5.5 cm) delta actions.
+
+**Usage (in-container):**
+
+    python3 scripts/eval_base_policy_real.py --episodes 10
+    python3 scripts/eval_base_policy_real.py --policy trained_models/franka/policy --episodes 5
+"""
+import argparse
+import functools
+import sys
+import time
+
+import numpy as np
+import torch as th
+from stable_baselines3.common.policies import ActorCriticPolicy
+
+from mile_franka.envs.registration import register_franka_envs, make_franka_env
+
+
+def _load_policy(path: str) -> ActorCriticPolicy:
+    """Load an SB3 policy. See eval_base_policy_sim.py for the weights_only rationale."""
+    orig_load = th.load
+    th.load = functools.partial(orig_load, weights_only=False)
+    try:
+        return ActorCriticPolicy.load(path)
+    finally:
+        th.load = orig_load
+
+
+def _confirm(prompt: str) -> None:
+    """Print a prompt and wait for the operator to press Enter (or Ctrl-C to abort)."""
+    print()
+    print(f"  >>> {prompt}")
+    print("  >>> Press Enter to continue, Ctrl-C to abort.")
+    try:
+        input()
+    except KeyboardInterrupt:
+        print("\nAborted by operator.")
+        sys.exit(0)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Evaluate a policy on the real FR3.")
+    ap.add_argument("--policy", default="trained_models/franka/base_policy",
+                    help="path to a saved SB3 ActorCriticPolicy")
+    ap.add_argument("--env_name", default="Franka-Stack-Real-v0")
+    ap.add_argument("--episodes", type=int, default=5,
+                    help="number of evaluation episodes")
+    args = ap.parse_args()
+
+    register_franka_envs()
+    import gymnasium as gym
+    env = make_franka_env(gym.make(args.env_name))
+    policy = _load_policy(args.policy)
+    policy.eval()
+
+    print(f"Policy   : {args.policy}")
+    print(f"Env      : {args.env_name}")
+    print(f"Episodes : {args.episodes}")
+    _confirm("ARM WILL MOVE on reset. Clear the workspace and stand clear.")
+
+    successes, steps_used, intervened = [], [], []
+    max_t = env.unwrapped.config.max_steps
+    for ep in range(args.episodes):
+        # --- Reset (moves the arm: joint home → activate Cartesian → Cartesian home) ---
+        print(f"\n{'='*50}")
+        print(f"Episode {ep + 1}/{args.episodes}")
+        _confirm(f"Episode {ep+1}: about to RESET (arm will move to home).")
+
+        state, _ = env.reset()
+        print("Reset complete — arm is at Cartesian home.")
+
+        # --- Place cubes ---
+        _confirm("Place the cubes in the workspace, then press Enter.")
+        print("Running policy — watch the arm and be ready on the e-stop.")
+
+        # --- Run policy ---
+        success = 0
+        try:
+            for t in range(max_t):
+                action, _ = policy.predict(np.asarray(state), deterministic=True)
+                state, _, terminated, truncated, info = env.step(action)
+                if info.get("success") or terminated or truncated:
+                    success = int(info.get("success", 0))
+                    steps_used.append(t + 1)
+                    break
+            else:
+                steps_used.append(max_t)
+        except KeyboardInterrupt:
+            print("Episode interrupted by operator (Ctrl-C).")
+            success = 0
+            steps_used.append(0)
+
+        successes.append(success)
+        status = "SUCCESS" if success else "no stack"
+        print(f"Episode {ep}: {status}  steps={steps_used[-1]}")
+
+    # --- Summary ---
+    rate = float(np.mean(successes))
+    mean_steps = np.mean(steps_used) if steps_used else 0
+    print(f"\n{'='*50}")
+    print(f"REAL FR3 POLICY EVAL")
+    print(f"  Success rate : {rate:.2f} ({sum(successes)}/{args.episodes})")
+    print(f"  Mean steps   : {mean_steps:.0f}")
+    print(f"  Policy       : {args.policy}")
+
+    env.close()
+
+
+if __name__ == "__main__":
+    main()

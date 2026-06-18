@@ -19,6 +19,7 @@ COST_LOOKUP = {
     'LunarLander-v2': [3, 1.0],
     'Franka-Stack-Fake-v0': [70, 100.0],
     'Franka-Stack-Sim-v0': [70, 100.0],
+    'Franka-Stack-Real-v0': [70, 100.0],
 }
 LOG_STD_MAX = 2
 LOG_STD_MIN = -20
