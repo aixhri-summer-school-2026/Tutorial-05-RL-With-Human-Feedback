@@ -48,4 +48,8 @@ services:
       - 'c 81:* rmw'                       # video4linux (RealSense UVC) — survives replug to new minors
       - 'c 189:* rmw'                      # usb (RealSense libusb)
     gpus: all                              # NVIDIA hardware GL + faster torch
-    command: sleep infinity
+    # Start Xvfb on :99 at container boot so ffmpeg x11grab has a local X server to record
+    # (SSH-forwarded / remote DISPLAY values are unreachable by x11grab).  sim-gui overrides
+    # DISPLAY per-exec with the host display for live viewing; the headless sim renders to :99.
+    command: >
+      bash -c 'Xvfb :99 -screen 0 1280x720x24 -ac -nolisten tcp +extension GLX +render & sleep infinity'
