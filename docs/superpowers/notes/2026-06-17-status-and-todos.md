@@ -1,7 +1,8 @@
 # MILE-on-Franka — status & TODOs (2026-06-17)
 
 Snapshot after the docker increment was implemented by an agent and reviewed. Roadmap phases:
-**(a)** sim + SpaceMouse → **(b)** real FR3 + SpaceMouse + AprilTag (lab) → **(c)** France = Vive swap.
+**(a)** sim + gamepad → **(b)** real FR3 + gamepad + AprilTag (lab) → **(c)** France = Vive swap.
+(Teleop device is now the **Xbox gamepad / `JoystickDevice`**, not the SpaceMouse; SpaceMouse code is kept as a fallback.)
 Forward-compat is a standing constraint (see the `forward-compat-franka` memory): the lab→France
 path must be config + re-tune, never a rewrite.
 
@@ -112,7 +113,7 @@ gamepad (`intervener: joystick`) as the dev teleop device alongside the SpaceMou
 - [ ] Calibrate `COST_LOOKUP` `[70,100]` for `Franka-Stack-Sim-v0` against observed human rate.
 - [ ] Run N=5 rounds with a human on the gamepad; show success rate improves across rounds.
 
-## Phase (b) — real FR3 + SpaceMouse + AprilTag (lab)
+## Phase (b) — real FR3 + gamepad + AprilTag (lab)
 - Generic `RosPoseStampedSource(topic)` → `AprilTagPoseSource` (pupil-apriltags, webcam),
   returning `Pose` in robot base frame.
 - `scripts/calibrate_camera.py` — **eye-to-hand**, Charuco-on-gripper, `cv2.calibrateHandEye` →

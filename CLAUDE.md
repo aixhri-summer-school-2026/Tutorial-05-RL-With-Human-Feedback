@@ -21,8 +21,8 @@ by modeling *when/why* a human intervenes.
 
 This fork's active project: **adapt MILE to run on a real Franka Panda (via hucebot's
 `multipanda_ros2`) for a summer-school tutorial, using a block-stacking task.** The
-design is built and validated against `multipanda_ros2`'s MuJoCo sim with a SpaceMouse in
-the home lab, then deployed on hardware with an HTC Vive in France — the two backends run
+design is built and validated against `multipanda_ros2`'s MuJoCo sim with an Xbox gamepad
+(joystick) in the home lab, then deployed on hardware with an HTC Vive in France — the two backends run
 the *same* Cartesian-impedance controller, so only the teleop device, object-pose source,
 and robot backend swap. **Read `docs/superpowers/specs/2026-06-15-mile-franka-stacking-design.md`
 before working on the Franka adaptation** — it records the design and the verified
@@ -150,9 +150,10 @@ imports and the smoke scripts run with no ROS installed.
 - **`mile_franka/pose/`** — `Pose`/`ObjectPoseSource` ABCs (`base.py`); `MujocoGtPoseSource`
   (`mujoco_gt.py`, real, bring-up-gated).
 - **`mile_franka/teleop/`** — `TeleopDevice`/`TeleopReading` ABCs (`base.py`);
-  `SpaceMouseDevice` (`spacemouse.py`) and `JoystickDevice` (`joystick.py`, pygame gamepad,
+  `JoystickDevice` (`joystick.py`, pygame gamepad — **the default dev teleop device**, ν via a
+  stateful clutch-toggle segment) and `SpaceMouseDevice` (`spacemouse.py`, kept as an alternative,
   ν = clutch-or-motion) — both use an injectable raw reader so they load/test without hardware.
-  Select via `intervener: spacemouse|joystick` in `config_franka.json`.
+  Select via `intervener: joystick|spacemouse` in `config_franka.json` (currently `joystick`).
 - **`mile_franka/policies/`** — `ScriptedStackPolicy` (`scripted.py`, mediocre state machine
   over GT poses; pass the active env's `StackTaskConfig` for sim/hardware); `build_actor_critic_policy`/`train_bc` (`bc.py`, MILE-arch policy + imitation
   BC); `collect_scripted_demos` (`demos.py`).
