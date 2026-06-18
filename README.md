@@ -62,6 +62,13 @@ Everything above runs headless on the host conda env. To run the **full human-in
 
 **Prerequisites:**
 - Docker Engine + the Compose plugin — check with `docker compose version`. If `make build` prints `docker: No such file or directory`, Docker isn't on your shell's PATH: install it, or — if you just installed it — open a fresh shell (in zsh, `hash -r` clears the stale command cache).
+- **The `hucebot:franka-humble` base image (build once per machine).** Our image layers the MILE stack on top of hucebot's multipanda_ros2 controller image, which is **not** on any registry — you build it from source. On a fresh machine, before `make build`:
+  ```bash
+  git clone https://github.com/hucebot/multipanda_ros2
+  cd multipanda_ros2 && docker compose build   # produces image hucebot:franka-humble
+  cd -
+  ```
+  `make build` then uses the classic Docker builder (`DOCKER_BUILDKIT=0`) on purpose: BuildKit would try to *pull* this local-only base from Docker Hub and fail with `pull access denied … hucebot:franka-humble`. Confirm the base is present with `docker images | grep hucebot`.
 - For the live window: an X server on the host, with the container allowed to use it. Once per login: `xhost +local:root`.
 - GPU is optional. `gpus: all` in `docker/docker-compose.yml` gives hardware GL + faster training; CPU-only works on software GL (~14 FPS).
 - A teleop device for the human-in-the-loop step: a 3Dconnexion SpaceMouse **or** an Xbox/PS gamepad. Uncomment its device line in `docker/docker-compose.yml` — `/dev/hidraw0` for the SpaceMouse, `/dev/input/js0` + `/dev/input/event0` for the gamepad (verify the node with `ls -l /dev/input/js* /dev/hidraw*`).

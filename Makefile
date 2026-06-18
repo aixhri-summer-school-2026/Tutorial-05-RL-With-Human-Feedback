@@ -10,8 +10,8 @@ DEMOS   ?= output_dir/franka/sim_demos_mediocre.npz   ## base-policy input; over
 
 .PHONY: build up down shell sim-up sim-gui collect-mediocre collect-expert base-policy mile spacemouse-check joystick-check eval-base
 
-build:                       ## build the image
-	$(DC) build
+build:                       ## build the image (classic builder: base hucebot:franka-humble is local-only, not on a registry)
+	DOCKER_BUILDKIT=0 $(DC) build
 
 up:                          ## start the persistent sim service
 	$(DC) up -d
