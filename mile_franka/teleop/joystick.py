@@ -29,8 +29,8 @@ class JoystickDevice(TeleopDevice):
     """
 
     def __init__(self, translation_scale: float = 0.02, deadband: float = 0.1,
-                 ax_x: int = 0, ax_y: int = 1, ax_z: int = 4,
-                 clutch_button: int = 5, gripper_button: int = 0, done_button: int = 7,
+                 ax_x: int = 0, ax_y: int = 1, ax_z: int = 4,  # Xbox: left stick x/y, right stick vertical
+                 clutch_button: int = 5, gripper_button: int = 0, done_button: int = 7,  # Xbox: RB, A, Start
                  reader: Optional[Callable[[], object]] = None):
         self.translation_scale = translation_scale
         self.deadband = deadband
@@ -47,7 +47,7 @@ class JoystickDevice(TeleopDevice):
         pygame.init()
         pygame.joystick.init()
         if pygame.joystick.get_count() == 0:
-            raise SystemExit("No joystick found — check /dev/input mapping and that a pad is connected")
+            raise RuntimeError("No joystick found — check /dev/input mapping and that a pad is connected")
         js = pygame.joystick.Joystick(0)
         js.init()
 
