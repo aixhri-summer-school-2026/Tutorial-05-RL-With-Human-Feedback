@@ -27,6 +27,8 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix      # host X socket for sim-gui live window
     devices:
       - /dev/hidraw0:/dev/hidraw0          # SpaceMouse (3Dconnexion) — verify node with: lsusb | grep -i 3dconnex; ls -l /dev/hidraw*
+    #   - /dev/input/js0:/dev/input/js0    # gamepad (Xbox/PS) — verify node with: ls -l /dev/input/js*; ls -l /dev/input/event*
+    #   - /dev/input/event0:/dev/input/event0  # gamepad SDL evdev node — pick the controller's event* (cat /proc/bus/input/devices)
     #   - /dev/video0:/dev/video0          # camera (France) — uncomment on hardware
     gpus: all                              # NVIDIA hardware GL + faster torch
     command: sleep infinity
