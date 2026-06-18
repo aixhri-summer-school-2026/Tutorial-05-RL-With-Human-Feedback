@@ -248,6 +248,9 @@ def iterative_training(config):
         elif which == 'spacemouse':
             from mile_franka.teleop.spacemouse import SpaceMouseDevice
             intervener = TeleopIntervener(SpaceMouseDevice())
+        elif which == 'joystick':
+            from mile_franka.teleop.joystick import JoystickDevice
+            intervener = TeleopIntervener(JoystickDevice())
         else:
             raise ValueError(f'Unknown intervener: {which}')
 
