@@ -2,11 +2,12 @@
 
 apriltag_ros publishes a tf frame per detected tag; with a static transform from the robot
 base to the camera optical frame (from the calibration YAML), tf2 yields base→tag directly.
-The tag sits on a cube FACE, so the cube center is half the cube edge further along the tag's
-outward normal (its +z axis). cube_center_pose() is pure so the geometry is unit-tested with
-no ROS. CONFIRM@bringup: the offset sign (whether the apriltag +z points into or out of the
-cube on the real mount) — flip half_edge sign here if the reported center lands in front of
-the face instead of at the cube center.
+The tag sits on a cube FACE, so the cube center is half the cube edge away from the face
+along its normal. cube_center_pose() applies that offset along the tag's +z axis and is pure
+so the geometry is unit-tested with no ROS. CONFIRM@bringup: the offset SIGN — whether the
+apriltag +z points into the cube (inward, the assumed direction) or out toward the camera
+depends on the detector convention and the physical mount; flip the half_edge sign here if
+the reported center lands in front of the face instead of at the cube center.
 """
 from __future__ import annotations
 

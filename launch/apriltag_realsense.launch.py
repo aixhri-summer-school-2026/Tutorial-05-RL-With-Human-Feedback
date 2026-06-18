@@ -6,7 +6,6 @@ same DDS graph as the controller so AprilTagPoseSource (tf2) can chain base -> c
 """
 import os
 
-from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
