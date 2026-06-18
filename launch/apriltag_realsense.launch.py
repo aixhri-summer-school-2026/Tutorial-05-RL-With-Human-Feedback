@@ -46,8 +46,11 @@ def generate_launch_description():
                           "enable_infra1": False, "enable_infra2": False,
                           "rgb_camera.color_profile": "640x480x15"}]),
         Node(package="apriltag_ros", executable="apriltag_node", name="apriltag",
-             remappings=[("image_rect", "/camera/color/image_raw"),
-                         ("camera_info", "/camera/color/camera_info")],
+             # realsense2_camera publishes on <camera_name>/color/... with camera_name
+             # defaulting to the node name ("camera"), so the actual topics are
+             # /camera/camera/color/image_raw and /camera/camera/color/camera_info.
+             remappings=[("image_rect", "/camera/camera/color/image_raw"),
+                         ("camera_info", "/camera/camera/color/camera_info")],
              parameters=[APRILTAG_CFG]),
     ]
 
