@@ -61,6 +61,7 @@ make collect-expert           # PERFECT successful-only rollouts -> sim_demos_ex
 make base-policy              # BC-train the mediocre base policy from sim_demos_mediocre.npz
 make mile                     # iterative MILE run (config_franka.json, Franka-Stack-Sim-v0)
 make shell                    # interactive in-container shell (env sourced)
+make joystick-check           # print live gamepad axes/buttons (sanity check)
 ```
 
 The `config_franka.json` targets `Franka-Stack-Sim-v0` and runs in-container via `make mile`
@@ -149,7 +150,9 @@ imports and the smoke scripts run with no ROS installed.
 - **`mile_franka/pose/`** — `Pose`/`ObjectPoseSource` ABCs (`base.py`); `MujocoGtPoseSource`
   (`mujoco_gt.py`, real, bring-up-gated).
 - **`mile_franka/teleop/`** — `TeleopDevice`/`TeleopReading` ABCs (`base.py`);
-  `SpaceMouseDevice` (`spacemouse.py`, injectable raw reader so it loads without hardware).
+  `SpaceMouseDevice` (`spacemouse.py`) and `JoystickDevice` (`joystick.py`, pygame gamepad,
+  ν = clutch-or-motion) — both use an injectable raw reader so they load/test without hardware.
+  Select via `intervener: spacemouse|joystick` in `config_franka.json`.
 - **`mile_franka/policies/`** — `ScriptedStackPolicy` (`scripted.py`, mediocre state machine
   over GT poses; pass the active env's `StackTaskConfig` for sim/hardware); `build_actor_critic_policy`/`train_bc` (`bc.py`, MILE-arch policy + imitation
   BC); `collect_scripted_demos` (`demos.py`).
