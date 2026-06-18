@@ -19,9 +19,11 @@ that was shown in sim — mediocre base policy, human intervenes via the gamepad
 works on hardware end-to-end and safely. This is the dress rehearsal for France: only the teleop
 device (gamepad → Vive) and the controller host should change in phase (c).
 
-Per the user's call, **intervention-cost tuning is deferred** — we proceed to the real robot now
-and return to `COST_LOOKUP` calibration later (sim *and* real). This phase delivers the hardware
-path; measured policy improvement is a later milestone once costs are tuned.
+Per the user's call, **the full MILE iterative loop (collect → retrain → repeat) runs on the real
+robot** in this phase — it is *not* a data-collection-only phase. What is **deferred** is
+`COST_LOOKUP` *calibration*: MILE runs with the **seed cost** `[70,100]`, and the formal "measured
+success-rate improvement across rounds" check is deferred to the later cost-tuning milestone (sim
+*and* real). So: MILE trains on hardware now; we tune the costs and prove improvement afterward.
 
 ## 2. Why this phase matters (not just plumbing)
 
@@ -50,10 +52,11 @@ the right ordering.
 
 ## 4. Scope
 
-**In scope:** AprilTag object-pose source behind the existing `ObjectPoseSource` ABC; eye-to-hand
-camera calibration script + shared calib file; `Franka-Stack-Real-v0` env builder with real-only
-safety semantics; bring-up against the live controller (resolve every `CONFIRM@bringup`, confirm
-`DOWN_QUAT`); real gamepad teleop data collection.
+**In scope:** AprilTag object-pose source (RealSense) behind the existing `ObjectPoseSource` ABC;
+eye-to-hand camera calibration script + shared calib file; `Franka-Stack-Real-v0` env builder with
+real-only safety semantics; bring-up against the live controller (resolve every `CONFIRM@bringup`,
+confirm `DOWN_QUAT`); real gamepad teleop; **the full MILE iterative loop (collect → retrain) on the
+real robot** with the seed `COST_LOOKUP`.
 **Out of scope:** Vive device + France day-of (phase c); `COST_LOOKUP` tuning (deferred, both sim
 and real); FoundationPose / markerless / textured tasks; any change to `FrankaEnv`, the teleop
 abstraction, the `Collector`, or the Box dataset schema (all reused unchanged — forward-compat).
@@ -67,22 +70,37 @@ topic, returning `Pose` in **robot base frame** (`panda_link0`). Mirrors the laz
 FoundationPose node later, drop in unchanged (both publish `PoseStamped` — parent spec §5.4).
 **Open: in-process detection vs ROS node — see §8.1.**
 
-### 5.2 `AprilTagPoseSource` — object pose
-`mile_franka/pose/apriltag.py`. Webcam frame → **pupil-apriltags** detect → tag pose in camera
-frame → transform to base frame via `camera→base` extrinsics. One tag id per cube (top/bottom);
-apply a fixed tag→cube-center offset. **Pre-grasp only**; expose a `last_seen` staleness signal so
-dropouts are detectable.
+### 5.2 `AprilTagPoseSource` — object pose (RealSense)
+`mile_franka/pose/apriltag.py`. **Intel RealSense** RGB frame (`pyrealsense2`) → **pupil-apriltags**
+detect (`tag36h11`) → tag pose in camera frame → transform to base frame via `camera→base`
+extrinsics. **Tags already exist:** `scripts/generate_cube_tags.py` prints `tag36h11`, **ID 0 =
+bottom cube, ID 1 = top cube**, `tag_size ≈ 0.036 m` (the value the script reports — pass it
+verbatim to the detector). Apply a fixed **tag→cube-center offset** (= half the cube edge along the
+tagged-face normal, plus any tag-on-face centering offset). **Pre-grasp only**; expose a
+`last_seen` staleness signal so dropouts are detectable.
 - **Grasp-transform carry:** once the gripper closes on the top cube the tag is occluded; stop
   trusting it and propagate the held cube's pose from EE motion (grasp offset frozen at grasp time
   — the same "freeze pose at a phase boundary" trick the sim scripted policy already uses).
-- Add the AprilTag lib to the image (parent spec §6 reserved this).
+- **Deps/passthrough:** add `pyrealsense2` + pupil-apriltags to the image; map the RealSense **USB**
+  device into the container (USB, not `/dev/video*`) — commented compose line like the gamepad one.
+- **RealSense bonus:** RGB-D is available, so depth can later refine/validate the tag's z and a
+  hucebot **FoundationPose** node could drop into `RosPoseStampedSource` (§5.1) unchanged for a
+  future textured task. Not used now — AprilTag-only for the cube tutorial.
+- **Cube size — resolved (user, 2026-06-18): 5 cm cubes.** This matches the tag sheet's 5 cm face,
+  so the existing `generate_cube_tags.py` output is used as-is. Set the **real** env's
+  `StackTaskConfig.cube_size = 0.05`; tag→cube-center offset = **0.025 m** half-edge along the
+  tagged-face normal; detector `tag_size ≈ 0.036 m`. **Action item:** the sim env currently uses
+  `cube_size = 0.06`; for a clean sim-to-real *transfer* (§5.7) set the **sim** geometry to 0.05 too
+  so the transferred policy sees matching grasp/place geometry, or accept the 1 cm mismatch as part
+  of the reality gap to watch on the first rollout.
 
 ### 5.3 Camera calibration — `scripts/calibrate_camera.py`
-**Eye-to-hand** (camera fixed, observing the workspace; *not* wrist-mounted). Charuco board
-**mounted on the gripper**; drive the arm to N varied poses (teleop or scripted), capture
-`(image, O_T_EE)` pairs, detect Charuco, run `cv2.calibrateHandEye` → solve **camera→base**, and
-estimate **intrinsics** in the same pass. Output → `config/camera_calib.yaml` (intrinsics +
-extrinsics), read by `AprilTagPoseSource`.
+**Eye-to-hand** (camera fixed, observing the workspace; *not* wrist-mounted). Because the RealSense
+ships **factory intrinsics** (read via `pyrealsense2`), this script is **extrinsics-focused**:
+Charuco board **mounted on the gripper**, drive the arm to N varied poses (teleop or scripted),
+capture `(image, O_T_EE)` pairs, detect Charuco, run `cv2.calibrateHandEye` → solve **camera→base**.
+Read intrinsics from the stream (optionally re-estimate from the Charuco set as a cross-check).
+Output → `config/camera_calib.yaml` (intrinsics + extrinsics), read by `AprilTagPoseSource`.
 - **Validation:** place a tag at a tape-measured workspace point; confirm base-frame xyz within
   ~5–10 mm. Re-measure / re-run after any camera bump (loud warning).
 - This is **the only asset step that cannot be pre-done before France** (parent spec §5.8/§7), so
@@ -114,11 +132,20 @@ obs shape `(18,)`, EE motion, gripper actuation, and `info['success']` on a hand
 - Operator approval before any motion; bounded Cartesian targets; controller clipping on.
 - Documented e-stop / "drop everything" procedure in the runbook.
 
-### 5.7 Real data collection
-`make collect-mediocre` / `make mile` against `Franka-Stack-Real-v0`, `intervener: joystick`,
-`auto_eval: false`. Records the same Box dataset; segment/discard/retry from the phase-(a) collector
-rework applies unchanged. **Base policy source is an open decision — §8.3.** Cost tuning is
-deferred, so this phase collects data and proves the loop runs; measured improvement comes later.
+### 5.7 Real data collection — sim-to-real transfer first
+`make mile` against `Franka-Stack-Real-v0`, `intervener: joystick`, `auto_eval: false`. **Decision:
+transfer the sim mediocre base policy to the real robot first** (load the sim `base_policy`
+artifact directly) rather than collecting fresh real demos — the obs space (`ee_xyz, gripper_width,
+top_pose(7), bottom_pose(7)`, 18-dim → 72 after FrameStack) is identical sim↔real by design, so the
+policy is loadable as-is. Watch the **first** transfer rollout closely under operator gating; if it
+behaves wildly (large reality gap), fall back to `make collect-mediocre` on hardware.
+
+**MILE runs here, on hardware:** after the transferred policy is loaded, the iterative loop
+(`mode: iterative`, `collector: real`, `intervener: joystick`, `auto_eval: false`) executes
+collect → `InterventionTrainer` retrain → repeat for `num_rounds`, using the **seed**
+`COST_LOOKUP[Franka-Stack-Real-v0]` (= the sim seed `[70,100]`). Records the same Box dataset;
+segment/discard/retry from the phase-(a) collector applies unchanged. Only the *cost calibration*
+and the formal improvement gate are deferred — the training itself happens on the real robot.
 
 ## 6. Data flow (unchanged collector, swapped pose source + backend)
 
@@ -139,26 +166,30 @@ forward-compat payoff.
    enough to grasp.
 5. A human teleop-stacks via the gamepad against the real robot; collection records clean segments
    (discard/retry works), `auto_eval: false`, safety invariants held throughout.
-   *(Measured policy improvement is deferred to the cost-tuning milestone, not a gate here.)*
+6. **The MILE iterative loop runs on the real robot**: transferred base policy → collect → retrain →
+   repeat `num_rounds` with the seed `COST_LOOKUP`, no autonomous rollout, completes without manual
+   restarts. *(Measured success-rate improvement is deferred to the cost-tuning milestone, not a
+   gate here.)*
 
-## 8. Open decisions (for the user)
+## 8. Open decisions
 
-1. **AprilTag detection transport.** In-process **pupil-apriltags** in `AprilTagPoseSource`
-   (simplest, CPU, no extra ROS node) **vs** a separate ROS AprilTag node publishing `PoseStamped`
-   consumed via `RosPoseStampedSource`. Recommendation: in-process pupil-apriltags now (fewer
-   moving parts), keep `RosPoseStampedSource` as the seam so a ROS node / FoundationPose drops in
-   later. Confirm?
-2. **Wrist-down orientation.** Which resolution path for the OPEN orientation-tracking risk —
-   (a) tune `rot_stiff`/`rotational_Ki` + settle time, (b) command a known initial joint config,
-   or (c) accept a fixed non-vertical approach and re-tune the scripted grasp? Affects how much
-   bring-up time §5.5 needs.
-3. **Base policy on hardware.** Transfer the **sim** mediocre base policy to the real robot, or
-   **collect fresh real** mediocre demos? Depends on the reality gap; transfer is cheaper, fresh is
-   safer. Recommendation: try transfer first, fall back to fresh collection if it behaves wildly.
-4. **Camera + mount.** Which webcam, and where is the fixed eye-to-hand mount (must see the whole
-   workspace without occluding the arm)? Needed before calibration.
-5. **AprilTag family/size + placement** that survives stacking (tag on a cube face that stays
-   visible pre-grasp; known tag→center offset). Confirm the printed tag spec.
+1. ~~AprilTag detection transport~~ — **resolved:** in-process **pupil-apriltags** on the RealSense
+   RGB stream now (fewest moving parts); `RosPoseStampedSource` (§5.1) kept as the seam so a ROS
+   node / FoundationPose drops in later.
+2. **Wrist-down orientation** *(still open — biggest technical risk).* Which resolution path for the
+   OPEN orientation-tracking risk — (a) tune `rot_stiff`/`rotational_Ki` + settle time, (b) command
+   a known initial joint config, or (c) accept a fixed non-vertical approach and re-tune the
+   scripted grasp? Decide during §5.5 bring-up on the real arm.
+3. ~~Base policy on hardware~~ — **resolved (user, 2026-06-18): sim-to-real transfer first.** Load
+   the sim mediocre base policy directly (identical obs space); fall back to fresh real collection
+   only if the first gated rollout behaves wildly. See §5.7.
+4. ~~Camera~~ — **resolved (user, 2026-06-18): Intel RealSense** (`pyrealsense2`, factory
+   intrinsics, RGB-D). *Still to confirm:* the fixed **eye-to-hand mount location** (must see the
+   whole workspace without the arm occluding the cubes pre-grasp).
+5. ~~AprilTag family/size~~ — **resolved:** `tag36h11`, ID 0=bottom / ID 1=top, `tag_size ≈ 0.036 m`
+   from `scripts/generate_cube_tags.py`. ~~cube edge~~ — **resolved (user, 2026-06-18): 5 cm cubes**
+   (matches the sheet; `cube_size=0.05`, offset 0.025 m — §5.2). *Still to confirm:* tag
+   **placement** on a face that stays visible pre-grasp.
 6. **`camera_calib.yaml` in git?** Commit the format/template but gitignore the machine-specific
    values (they differ per lab and must be recalibrated)? Recommendation: template in git, real
    values gitignored.

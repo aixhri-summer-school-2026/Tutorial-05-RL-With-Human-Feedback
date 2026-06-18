@@ -91,13 +91,19 @@ against the **real** controller, not just sim. Specifically:
 5. Re-check workspace bounds / `action_scale` / grasp force (the sim bumped grasp to 80 N) on
    the real gripper; tune `StackTaskConfig` if the real cubes differ.
 
-## Workstream 5 — Real data collection + MILE on hardware
-1. Collect a **mediocre base policy** on the real robot (or transfer + fine-tune the sim base
-   policy; decide based on the reality gap). `make collect-mediocre` against `Franka-Stack-Real-v0`.
-2. **Re-calibrate `COST_LOOKUP['Franka-Stack-Real-v0']`** on hardware (separate key; seed from
-   the sim value, then redo steps 1–3 of the cost tuning guide with the real human rate).
-3. Run iterative MILE (`config_franka.json` pointed at the real env, `intervener: joystick`,
-   `auto_eval: false`); show success rate improving across rounds.
+## Workstream 5 — MILE on hardware (sim-to-real transfer first)
+1. **Transfer the sim mediocre base policy** to the real robot (load the sim `base_policy` artifact
+   directly — identical 18-dim obs space). Watch the first gated rollout; fall back to
+   `make collect-mediocre` on hardware only if the reality gap is severe.
+2. **Run the full iterative MILE loop on the real robot**: `config_franka.json` pointed at
+   `Franka-Stack-Real-v0`, `mode: iterative`, `collector: real`, `intervener: joystick`,
+   `auto_eval: false` — collect → retrain → repeat `num_rounds`, using the **seed**
+   `COST_LOOKUP['Franka-Stack-Real-v0']` (= sim seed `[70,100]`, separate key).
+3. **Cost tuning is deferred** (user, 2026-06-18): run MILE with the seed now; re-calibrate
+   `COST_LOOKUP` and prove measured improvement in a later milestone (see cost tuning guide).
+4. **Cube geometry:** 5 cm cubes (user decision); set the real env `cube_size=0.05` (tag offset
+   0.025 m). For a clean transfer, also set the **sim** env to 0.05 or treat the 1 cm gap as
+   reality-gap to watch.
 
 ---
 
