@@ -1,20 +1,20 @@
 <!-- Two free-joint cubes for the MILE block-stacking task.
      A <mujocoinclude> fragment, mirroring multipanda's franka_description/mujoco/franka/objects.xml.
      Physics params (friction/solimp/solref/damping) copied from the proven obj_box_01 there so
-     the franka hand can grasp reliably. 6 cm cubes (half-extent 0.03) < gripper max open (~8 cm).
+     the franka hand can grasp reliably. 5 cm cubes (half-extent 0.025) < gripper max open (~8 cm).
      Body names bottom_cube/top_cube match mile_franka BOTTOM_CUBE/TOP_CUBE pose keys.
      Positions: workspace ~x=0.5, separated in y by >reset_min_separation; resting on the floor
      (z = half-extent). The sim/launch may randomize these; these are just defaults. -->
 <mujocoinclude>
   <worldbody>
-    <body name="bottom_cube" pos="0.5 0.10 0.031">
-      <geom name="bottom_cube" type="box" size="0.03 0.03 0.03"
+    <body name="bottom_cube" pos="0.5 0.10 0.025">
+      <geom name="bottom_cube" type="box" size="0.025 0.025 0.025"
             friction="2 0.005 0.0001" solimp="0.998 0.998 0.001" solref="0.001 1"
             density="100" rgba="0.30 0.45 0.90 1"/>
       <joint name="bottom_cube_joint" type="free" damping="0.0005"/>
     </body>
-    <body name="top_cube" pos="0.5 -0.10 0.031">
-      <geom name="top_cube" type="box" size="0.03 0.03 0.03"
+    <body name="top_cube" pos="0.5 -0.10 0.025">
+      <geom name="top_cube" type="box" size="0.025 0.025 0.025"
             friction="2 0.005 0.0001" solimp="0.998 0.998 0.001" solref="0.001 1"
             density="100" rgba="0.90 0.40 0.30 1"/>
       <joint name="top_cube_joint" type="free" damping="0.0005"/>

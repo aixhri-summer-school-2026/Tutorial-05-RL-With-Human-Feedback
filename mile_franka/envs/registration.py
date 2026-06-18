@@ -25,11 +25,11 @@ def _build_sim_env(config: Optional[StackTaskConfig] = None) -> FrankaEnv:
     from mile_franka.envs.ros_backend import MultipandaRosBackend
     from mile_franka.pose.mujoco_gt import MujocoGtPoseSource
 
-    # Align with the MJCF stacking scene: 6 cm cubes (half-extent 0.03), floor at world z=0.
+    # Align with the MJCF stacking scene: 5 cm cubes (half-extent 0.025), floor at world z=0.
     # 300-step horizon: the scripted policy's 7-phase sequence needs ~150-250 steps against the
     # real impedance controller (which tracks more slowly than the fake backend).
     config = config if config is not None else StackTaskConfig(
-        cube_size=0.06,
+        cube_size=0.05,
         table_z=0.0,
         workspace_low=np.array([0.40, -0.18, 0.02], dtype=np.float32),
         workspace_high=np.array([0.75, 0.18, 0.40], dtype=np.float32),
