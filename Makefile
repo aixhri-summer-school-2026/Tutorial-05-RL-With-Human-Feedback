@@ -8,7 +8,7 @@ RUND     = $(DC) exec -d sim bash -lc '$(ENVSH) && $(1)'
 TS      := $(shell date -u +%Y%m%dT%H%M%S)
 DEMOS   ?= output_dir/franka/sim_demos_mediocre.npz   ## base-policy input; override: make base-policy DEMOS=path.npz
 
-.PHONY: build up down shell sim-up sim-gui collect-mediocre collect-expert base-policy mile mile-real spacemouse-check joystick-check eval-base eval-mile pose-test apriltag-up calibrate-camera eval-real
+.PHONY: build up down shell sim-up sim-gui collect-mediocre collect-expert base-policy mile mile-real spacemouse-check joystick-check eval-base eval-mile pose-test apriltag-up calibrate-camera eval-real view-tags view-twin
 
 build:                       ## build the image (classic builder: base hucebot:franka-humble is local-only, not on a registry)
 	DOCKER_BUILDKIT=0 $(DC) build
@@ -75,11 +75,18 @@ eval-mile:                   ## run the MILE-trained policy in sim -> success ra
 pose-test:                   ## run the pose-layer unit tests (no ROS/hardware needed)
 	pytest tests/test_calibration.py tests/test_apriltag_pose.py tests/test_ros_posestamped.py -v
 
-apriltag-up:                 ## launch realsense2_camera + apriltag_ros + calibration static tf (in container)
-	ros2 launch $(PWD)/launch/apriltag_realsense.launch.py
+apriltag-up:                 ## launch realsense2_camera + apriltag_ros + calibration static tf (foreground)
+	$(call RUN,self=$$$$; pgrep -f "apriltag_realsense.launch.py|apriltag_node|realsense2_camera_node|static_transform_publisher.*camera_to_base" | grep -vx $$self | xargs -r kill 2>/dev/null; sleep 2; ros2 launch launch/apriltag_realsense.launch.py)
 
 calibrate-camera:            ## run eye-to-hand camera calibration (needs controller + apriltag-up running)
 	$(DC) exec -e DISPLAY=$$DISPLAY sim bash -lc '$(ENVSH) && python3 scripts/calibrate_camera.py'
 
+view-tags:                   ## MJPEG stream with AprilTag overlay → open http://localhost:8080 (needs apriltag-up)
+	$(call RUN,python3 scripts/view_camera_tags.py)
+
 eval-real:                   ## run policy eval on the real FR3 (needs controller + apriltag-up running)
 	$(DC) exec -e DISPLAY=$$DISPLAY sim bash -lc '$(ENVSH) && python3 scripts/eval_base_policy_real.py'
+
+view-twin:                   ## live MuJoCo digital twin of the real workspace on the host display (read-only; needs controller + apriltag-up; safe in parallel with mile-real/eval-real)
+	@echo "Host prereq (once per login): xhost +local:root"
+	$(DC) exec -e DISPLAY=$$DISPLAY sim bash -lc '$(ENVSH) && python3 scripts/view_cubes_mujoco.py'
