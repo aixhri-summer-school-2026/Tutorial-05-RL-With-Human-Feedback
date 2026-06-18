@@ -41,7 +41,7 @@ cd scripts && python train_mile.py --config ../config_franka.json && cd ..
 
 You should see `Round: 0` / `Round: 1`, the dataset growing each round, and the trained policy + mental model written to `output_dir/franka/`. Increase `num_rounds` / `episodes_per_round` / `train.num_epochs` in `config_franka.json` for a real run.
 
-To use a **live SpaceMouse** instead of the scripted human, set `"intervener": "spacemouse"` in `config_franka.json` (requires `pyspacemouse` + the device attached).
+To put a **real human** in the loop instead of the scripted one, set `"intervener"` in `config_franka.json` to `"spacemouse"` (3Dconnexion SpaceMouse) or `"joystick"` (Xbox/PS gamepad), with the device attached. The full live-sim runbook for this is below ([Docker sim path — cold start](#docker-sim-path--cold-start-live-robot--human-teleop)).
 
 ### Multipanda MuJoCo sim path
 
@@ -55,6 +55,43 @@ DISPLAY=:99 python scripts/franka_sim_rollout_record.py \
 ```
 
 For a smoke run, tiny BC settings are useful for import/API validation, but they are not a quality check; use the normal `build_base_policy.py` defaults when you need a usable mediocre base policy.
+
+### Docker sim path — cold start (live robot + human teleop)
+
+Everything above runs headless on the host conda env. To run the **full human-in-the-loop loop on the multipanda MuJoCo sim** — a live MuJoCo window plus a real SpaceMouse or gamepad — use the Docker image and the `make` verbs ([docker design](docs/superpowers/specs/2026-06-16-mile-docker-image-and-sim-demos-design.md), [phase-a design](docs/superpowers/specs/2026-06-17-phase-a-sim-spacemouse-design.md)). Run everything from the repo root.
+
+**Prerequisites:**
+- Docker Engine + the Compose plugin — check with `docker compose version`. If `make build` prints `docker: No such file or directory`, Docker isn't on your shell's PATH: install it, or — if you just installed it — open a fresh shell (in zsh, `hash -r` clears the stale command cache).
+- For the live window: an X server on the host, with the container allowed to use it. Once per login: `xhost +local:root`.
+- GPU is optional. `gpus: all` in `docker/docker-compose.yml` gives hardware GL + faster training; CPU-only works on software GL (~14 FPS).
+- A teleop device for the human-in-the-loop step: a 3Dconnexion SpaceMouse **or** an Xbox/PS gamepad. Uncomment its device line in `docker/docker-compose.yml` — `/dev/hidraw0` for the SpaceMouse, `/dev/input/js0` + `/dev/input/event0` for the gamepad (verify the node with `ls -l /dev/input/js* /dev/hidraw*`).
+
+**Steps:**
+
+```bash
+# 1. Build the image and start the persistent `sim` service
+make build
+make up
+
+# 2. Launch the multipanda stacking sim (headless is fine for collection/training)
+make sim-up            # headless; or `make sim-gui` for a live window (needs xhost)
+
+# 3. Collect mediocre demos and BC-train the base policy
+make collect-mediocre  # -> output_dir/franka/sim_demos_mediocre.npz
+make base-policy       # BC-trains the mediocre base policy from those demos
+make eval-base         # (optional) measure the base policy's sim success rate
+
+# 4. Verify your teleop device reads inside the container
+make spacemouse-check  # SpaceMouse: push the puck, expect nonzero deflection
+#   or: make joystick-check   # gamepad: push the sticks / press buttons
+
+# 5. Pick the human device and run the iterative MILE loop
+#    edit config_franka.json -> "intervener": "spacemouse" | "joystick"
+make sim-gui           # live window so you can see when to take over
+make mile              # human overrides when the policy is about to fail; repeats N rounds
+```
+
+`make shell` opens an in-container shell with the env sourced; `make down` stops the service. `make mile` runs against a live sim, so keep `make sim-up`/`make sim-gui` running in another terminal.
 
 ### Toward the real robot
 
