@@ -8,6 +8,8 @@ USER root
 # init needs a reachable X display even headless; without it the sim node dies on boot and the
 # whole controller graph wedges. Verify both landed so the image can never ship without them.
 RUN apt-get update -qq && apt-get install -y --no-install-recommends xvfb ffmpeg \
+        ros-humble-realsense2-camera \
+        ros-humble-apriltag-ros \
  && rm -rf /var/lib/apt/lists/* \
  && command -v Xvfb >/dev/null && command -v ffmpeg >/dev/null \
  || { echo "FATAL: Xvfb/ffmpeg not installed" >&2; exit 1; }
