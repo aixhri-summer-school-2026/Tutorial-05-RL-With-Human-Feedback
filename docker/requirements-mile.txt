@@ -8,4 +8,7 @@ tensorboard
 pyspacemouse
 hidapi
 pupil-apriltags
+# numpy-2-compatible opencv shadows the system apt package (4.5.4, numpy-1.x)
+# so gymnasium's atari_preprocessing import doesn't crash with numpy 2.2.6.
+opencv-python-headless
 # torch is installed separately in the Dockerfile (CPU wheel) to control the index URL.
