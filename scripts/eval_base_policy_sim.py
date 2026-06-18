@@ -18,12 +18,14 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from mile_franka.envs.registration import register_franka_envs, make_franka_env
 
 
-def start_recorder(out_path, display, size, fps):
+def start_recorder(out_path, display, size, fps, crop=None):
     """ffmpeg x11grab recorder for the headless Xvfb display (mirrors franka_sim_rollout_record)."""
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     cmd = ["ffmpeg", "-y", "-f", "x11grab", "-video_size", size,
-           "-framerate", str(fps), "-i", display,
-           "-pix_fmt", "yuv420p", out_path]
+           "-framerate", str(fps), "-i", display]
+    if crop:
+        cmd += ["-vf", crop]
+    cmd += ["-pix_fmt", "yuv420p", out_path]
     return subprocess.Popen(cmd, stdin=subprocess.PIPE,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -34,6 +36,21 @@ def stop_recorder(proc):
     except Exception:
         proc.terminate()
         proc.wait(timeout=10)
+
+
+def _detect_crop(display, size, fps):
+    """Capture a few seconds, run cropdetect, return crop=W:H:X:Y or None."""
+    import re
+    import tempfile
+    cmd = ["ffmpeg", "-y", "-f", "x11grab", "-video_size", size,
+           "-framerate", str(fps), "-i", display,
+           "-t", "2", "-vf", "cropdetect",
+           "-pix_fmt", "yuv420p", "-f", "null", "/dev/null"]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+    matches = re.findall(r"crop=(\d+:\d+:\d+:\d+)", proc.stderr)
+    if matches:
+        return f"crop={matches[-1]}"
+    return None
 
 
 def _load_policy(path: str) -> ActorCriticPolicy:
@@ -59,7 +76,7 @@ def main() -> None:
     ap.add_argument("--video_dir", default=None,
                     help="if set, record one clip per episode here (episode_<i>.mp4)")
     ap.add_argument("--display", default=os.environ.get("DISPLAY", ":99"))
-    ap.add_argument("--size", default="1280x720")
+    ap.add_argument("--size", default="1920x1080")
     ap.add_argument("--fps", type=int, default=15)
     ap.add_argument("--video_start_hold", type=float, default=0.5,
                     help="seconds to hold the reset scene before policy actions (recording on)")
@@ -74,13 +91,21 @@ def main() -> None:
 
     successes, steps_used = [], []
     max_t = env.unwrapped.config.max_steps
+
+    crop_filter = None
+    if args.video_dir:
+        print("detecting MuJoCo window crop region...")
+        crop_filter = _detect_crop(args.display, args.size, args.fps)
+        if crop_filter:
+            print(f"  crop filter: {crop_filter}")
+
     for ep in range(args.episodes):
         state, _ = env.reset()
         # Start the recorder after reset so the first frame is the episode's start state.
         rec = None
         if args.video_dir:
             rec = start_recorder(os.path.join(args.video_dir, f"episode_{ep}.mp4"),
-                                 args.display, args.size, args.fps)
+                                 args.display, args.size, args.fps, crop=crop_filter)
             time.sleep(args.video_start_hold)
         success = 0
         try:

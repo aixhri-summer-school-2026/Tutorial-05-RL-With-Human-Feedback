@@ -25,11 +25,29 @@ from mile_franka.envs.registration import SIM_ENV_ID, register_franka_envs
 from mile_franka.policies.scripted import ScriptedStackPolicy
 
 
-def start_recorder(out_path, display, size, fps):
+def _detect_crop(display, size, fps):
+    """Capture a few seconds from *display*, run cropdetect, return crop=W:H:X:Y or None."""
+    import re
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as tmp:
+        cmd = ["ffmpeg", "-y", "-f", "x11grab", "-video_size", size,
+               "-framerate", str(fps), "-i", display,
+               "-t", "2", "-vf", "cropdetect",
+               "-pix_fmt", "yuv420p", "-f", "null", "/dev/null"]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        matches = re.findall(r"crop=(\d+:\d+:\d+:\d+)", proc.stderr)
+        if matches:
+            return f"crop={matches[-1]}"  # last detection is the settled one
+    return None
+
+
+def start_recorder(out_path, display, size, fps, crop=None):
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     cmd = ["ffmpeg", "-y", "-f", "x11grab", "-video_size", size,
-           "-framerate", str(fps), "-i", display,
-           "-pix_fmt", "yuv420p", out_path]
+           "-framerate", str(fps), "-i", display]
+    if crop:
+        cmd += ["-vf", crop]
+    cmd += ["-pix_fmt", "yuv420p", out_path]
     return subprocess.Popen(cmd, stdin=subprocess.PIPE,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -97,7 +115,7 @@ def main():
     ap.add_argument("--max_attempts", type=int, default=0,
                     help="max attempts before giving up (0 = 3 × --episodes)")
     ap.add_argument("--display", default=os.environ.get("DISPLAY", ":99"))
-    ap.add_argument("--size", default="1280x720")
+    ap.add_argument("--size", default="1920x1080")
     ap.add_argument("--fps", type=int, default=15)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--video_start_hold", type=float, default=0.5,
@@ -127,8 +145,20 @@ def main():
     saved = 0
     successes = 0
     attempt = 0
+    crop_filter = None
 
     try:
+        # Auto-detect the MuJoCo window region so the saved video is tight (no black
+        # borders from the Xvfb desktop).  The GLFW window renders at ~2/3 of the Xvfb
+        # resolution; cropdetect finds the exact pixel bounds.
+        if args.out_dir or args.out:
+            print("detecting MuJoCo window crop region...")
+            crop_filter = _detect_crop(args.display, args.size, args.fps)
+            if crop_filter:
+                print(f"  crop filter: {crop_filter}")
+            else:
+                print("  crop detection failed — recording full Xvfb frame")
+
         while saved < args.episodes and attempt < max_attempts:
             ep_path = None
             ep_rec = None
@@ -137,7 +167,8 @@ def main():
             print(f"attempt {attempt}: start {format_state(start_state)}")
 
             if args.out and not args.out_dir and combined_rec is None:
-                combined_rec = start_recorder(args.out, args.display, args.size, args.fps)
+                combined_rec = start_recorder(args.out, args.display, args.size, args.fps,
+                                              crop=crop_filter)
                 time.sleep(args.video_start_hold)
 
             if args.out_dir:
@@ -146,7 +177,8 @@ def main():
                 # (Naming by `saved` up front would let the next attempt overwrite a failed
                 # rollout's clip before we get to keep it.)
                 ep_path = os.path.join(args.out_dir, f"_attempt{attempt}.mp4")
-                ep_rec = start_recorder(ep_path, args.display, args.size, args.fps)
+                ep_rec = start_recorder(ep_path, args.display, args.size, args.fps,
+                                        crop=crop_filter)
                 time.sleep(args.video_start_hold)
 
             obs_list, act_list, success, final_obs = run_episode(env, policy, obs)

@@ -51,5 +51,8 @@ services:
     # Start Xvfb on :99 at container boot so ffmpeg x11grab has a local X server to record
     # (SSH-forwarded / remote DISPLAY values are unreachable by x11grab).  sim-gui overrides
     # DISPLAY per-exec with the host display for live viewing; the headless sim renders to :99.
+    # The MuJoCo GLFW window renders at ~2/3 of the Xvfb resolution; the rollout scripts
+    # auto-crop the black borders via ffmpeg cropdetect.  Keep the Xvfb large enough that the
+    # window is at a legible pixel count.
     command: >
-      bash -c 'Xvfb :99 -screen 0 1280x720x24 -ac -nolisten tcp +extension GLX +render & sleep infinity'
+      bash -c 'Xvfb :99 -screen 0 1920x1080x24 -ac -nolisten tcp +extension GLX +render & sleep infinity'
