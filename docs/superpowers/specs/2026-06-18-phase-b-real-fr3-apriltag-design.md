@@ -144,17 +144,23 @@ wrist down in sim. Replace the *start* of homing with a **joint-space** move to 
   store the resulting joint vector as a constant so sim and real share it (**forward-compat**;
   France inherits the same `Q_HOME`). The ready pose itself is the fallback `Q_HOME` if IK is
   unavailable.
-- **Joint-space homing on reset, before activating the Cartesian controller.**
-  - *sim — done:* `Q_HOME` **equals the franka ready pose**, which is exactly the goal of the
-    `move_to_start_example_controller` already wired into the backend. The fix is to **re-enable**
-    `move_to_start_on_reset=True` in `_build_sim_env` (it had been disabled over a launch-time
-    cold-boot spawner race that is now self-healed in `_wait_for_controller_node`, which loads the
-    controller inactive via `controller_manager` before activation). Reset then runs:
-    `_move_to_start()` (joint → wrist-down) → `_home(activate_controller=True)` (Cartesian captures
-    the down EE, ramps to home with `DOWN_QUAT`). **Needs a live-sim validation run** (see below).
-  - *real:* the hucebot stack's joint-space controller / move-to-start driven to `Q_HOME`.
-  - **`CONFIRM@bringup`:** the exact joint-command interface name on the live controller; and that
-    the sim `move_to_start` goal matches `Q_HOME` (refine via IK if the home TCP point must move).
+- **Joint-space homing — split by what the multipanda stack actually provides** (verified by
+  reading `~/multipanda_ros2`):
+  - *real:* `move_to_start_example_controller` **is defined in the real config**
+    (`franka_bringup/config/real/single_controllers.yaml`). It drives to a **hardcoded**
+    `q_goal = [-0.008, -0.005, 0.011, -1.563, 0.005, 1.603, 0.850]`
+    (`move_to_start_example_controller.cpp`; it ignores external goals). So the real builder sets
+    `move_to_start_on_reset=True`: reset runs `_move_to_start()` (joint → wrist-down) →
+    `_home(activate_controller=True)` (Cartesian captures the down EE, ramps to home with
+    `DOWN_QUAT`). `config.Q_HOME` mirrors that `q_goal` for documentation / a future custom move.
+  - *sim:* the **sim config has no `move_to_start` controller**
+    (`config/sim/single_sim_controllers.yaml`), so this path is unavailable. Sim keeps
+    `move_to_start_on_reset=False` and homes via the Cartesian impedance controller alone — which,
+    with `SIM_STACKING_GAINS`, already holds the wrist down well enough that scripted/expert
+    rollouts stack reliably. (My earlier attempt to re-enable `move_to_start` in sim was reverted:
+    it would fail because controller_manager has no type for it in the sim config.)
+  - **`CONFIRM@bringup`:** that the real `q_goal` is genuinely wrist-down and clears the workspace
+    (refine via IK if not); the exact real gripper namespace (`franka_gripper_node/grasp`).
 - **Reset sequence becomes:** open gripper → `move_to_joint_config(Q_HOME)` (wrist now physically
   down) → activate Cartesian impedance (captures the down EE as its equilibrium) → existing
   Cartesian settle. The 10 Hz policy/scripted loop then only ever commands small **position** deltas
@@ -212,10 +218,11 @@ forward-compat payoff.
 1. ~~AprilTag detection transport~~ — **resolved:** in-process **pupil-apriltags** on the RealSense
    RGB stream now (fewest moving parts); `RosPoseStampedSource` (§5.1) kept as the seam so a ROS
    node / FoundationPose drops in later.
-2. ~~Wrist-down orientation~~ — **resolved (user, 2026-06-18): set a known initial joint config**
-   (option b). Precompute a wrist-down `Q_HOME` via IK, reset to it in joint space, then hand to the
-   Cartesian controller. See §5.8. *Still to confirm at bring-up:* the live joint-command interface
-   name and that `Q_HOME`'s TCP/clearance suit the real workspace.
+2. ~~Wrist-down orientation~~ — **resolved (user, 2026-06-18): known initial joint config** (option
+   b), realized via the stack's `move_to_start_example_controller` on **real** (it exists only in
+   the real config; `Q_HOME` mirrors its hardcoded `q_goal`). **Sim** keeps Cartesian-only homing
+   (no sim move_to_start controller) — already adequate. See §5.8. *Still to confirm at bring-up:*
+   that the real `q_goal` is wrist-down and clears the workspace.
 3. ~~Base policy on hardware~~ — **resolved (user, 2026-06-18): sim-to-real transfer first.** Load
    the sim mediocre base policy directly (identical obs space); fall back to fresh real collection
    only if the first gated rollout behaves wildly. See §5.7.

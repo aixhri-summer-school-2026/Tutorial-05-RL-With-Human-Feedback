@@ -33,14 +33,20 @@ from mile_franka.config import StackTaskConfig
 from mile_franka.envs.backend import RobotBackend
 
 # Confirmed live names (hucebot:franka-humble, franka_sim_cartesian_impedance.launch.py).
-EQUILIBRIUM_TOPIC = "/cartesian_impedance/equilibrium_pose"
-EE_CURR_TOPIC = "/cartesian_impedance/cartesian_pos_curr"  # O_T_EE in panda_link0 frame
+# VERIFIED in multipanda_ros2 (franka_example_controllers custom_cartesian_impedance_controller
+# + franka_bringup config/{sim,real}): the controller name and these two topics are IDENTICAL in
+# the sim and real configs, so they are shared across both backends.
+EQUILIBRIUM_TOPIC = "/cartesian_impedance/equilibrium_pose"  # PoseStamped command (sim==real)
+EE_CURR_TOPIC = "/cartesian_impedance/cartesian_pos_curr"  # O_T_EE PoseStamped, panda_link0 (sim==real)
+CONTROLLER_NAME = "custom_cartesian_impedance_controller"  # sim==real
+# Sim-only mujoco_ros services (not present on the real graph; gated by sim=True).
 GET_BODY_STATE_SRV = "/get_body_state"
 SET_BODY_STATE_SRV = "/set_body_state"
 SET_PAUSE_SRV = "/set_pause"
-GRASP_ACTION = "/panda_gripper_sim_node/grasp"  # franka_msgs/action/Grasp
-EE_BODY = "panda_hand"  # used only if EE_CURR_TOPIC is unavailable
-CONTROLLER_NAME = "custom_cartesian_impedance_controller"
+GRASP_ACTION = "/panda_gripper_sim_node/grasp"  # sim gripper; real = franka_gripper_node/grasp
+EE_BODY = "panda_hand"  # used only if EE_CURR_TOPIC is unavailable (sim fallback)
+# move_to_start exists ONLY in the real controller config (not the sim config); used for the
+# real wrist-down joint-space home. See config.Q_HOME and envs/registration.py.
 MOVE_TO_START_CONTROLLER = "move_to_start_example_controller"
 ENV_STEP_PERIOD_S = 0.1  # ~10 Hz Python env command/observation step
 SIM_STACKING_GAINS = {
@@ -109,8 +115,10 @@ class MultipandaRosBackend(RobotBackend):
         self._Grasp = Grasp
 
         self._pub = self._node.create_publisher(PoseStamped, EQUILIBRIUM_TOPIC, 10)
-        # CONFIRM@bringup: real franka_ros2 gripper grasp action name (sim default is the
-        # multipanda sim gripper node). franka_msgs/action/Grasp is the same message type.
+        # Real franka_gripper grasp action is "franka_gripper_node/grasp" (verified in
+        # multipanda_ros2 franka_gripper/src/gripper_action_server.cpp: node "franka_gripper_node",
+        # server "~/grasp"); sim default below is the multipanda sim gripper node. Same
+        # franka_msgs/action/Grasp message type. CONFIRM@bringup: the real gripper namespace.
         self._grasp = ActionClient(self._node, Grasp, grasp_action)
 
         # mujoco_ros services (pause + GT body poses) exist only in the sim graph.

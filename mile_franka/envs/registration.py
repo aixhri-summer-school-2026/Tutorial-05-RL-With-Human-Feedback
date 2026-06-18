@@ -39,15 +39,15 @@ def _build_sim_env(config: Optional[StackTaskConfig] = None) -> FrankaEnv:
         config,
         apply_sim_gains=True,
         reset_controller_target_on_reset=True,
-        # Wrist-down homing: first drive to the known wrist-down joint config (config.Q_HOME,
-        # = the franka ready pose, which is exactly the move_to_start_example_controller goal)
-        # in JOINT space, then _home() activates the Cartesian controller -- which captures the
-        # now-down EE as its equilibrium -- and ramps to the fixed home with DOWN_QUAT. This
-        # replaces relying on the soft impedance controller to *achieve* a down orientation,
-        # which was unreliable. The launch-time spawner cold-boot race that originally caused a
-        # reset timeout is now self-healed in _wait_for_controller_node (the controller is
-        # loaded inactive via controller_manager before activation), so re-enabling is safe.
-        move_to_start_on_reset=True,
+        # NOTE: move_to_start_example_controller is NOT in the multipanda sim controller config
+        # (franka_bringup/config/sim/single_sim_controllers.yaml) -- it exists only in the real
+        # config -- so joint-space homing via that controller is unavailable in sim. The sim
+        # instead homes via the Cartesian impedance controller (prime->activate captures the EE,
+        # then _home() ramps to the fixed home with DOWN_QUAT); with SIM_STACKING_GAINS this
+        # holds the wrist down well enough that scripted/expert rollouts stack reliably. The
+        # known-wrist-down-joint-config approach (config.Q_HOME / move_to_start) is the REAL path
+        # only (real config defines move_to_start_example_controller). See the phase-b spec §5.8.
+        move_to_start_on_reset=False,
         env_step_period_s=0.1,
         home_steps=50,
         home_settle_s=0.8,
