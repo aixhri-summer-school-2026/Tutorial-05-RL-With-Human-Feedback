@@ -86,16 +86,21 @@ tagged-face normal, plus any tag-on-face centering offset). **Pre-grasp only**; 
 - **RealSense bonus:** RGB-D is available, so depth can later refine/validate the tag's z and a
   hucebot **FoundationPose** node could drop into `RosPoseStampedSource` (§5.1) unchanged for a
   future textured task. Not used now — AprilTag-only for the cube tutorial.
-- **Cube size — resolved (user, 2026-06-18): 5 cm cubes.** This matches the tag sheet's 5 cm face,
-  so the existing `generate_cube_tags.py` output is used as-is. Set the **real** env's
-  `StackTaskConfig.cube_size = 0.05`; tag→cube-center offset = **0.025 m** half-edge along the
-  tagged-face normal; detector `tag_size ≈ 0.036 m`. **Action item:** the sim env currently uses
-  `cube_size = 0.06`; for a clean sim-to-real *transfer* (§5.7) set the **sim** geometry to 0.05 too
-  so the transferred policy sees matching grasp/place geometry, or accept the 1 cm mismatch as part
-  of the reality gap to watch on the first rollout.
+- **Cube size — resolved (user, 2026-06-18): 5 cm everywhere.** Matches the tag sheet's 5 cm face,
+  so `generate_cube_tags.py` output is used as-is. `StackTaskConfig.cube_size = 0.05` is now the
+  default (fake env), the sim builder already used 0.05, and the real env uses it too — done in
+  code. Tag→cube-center offset = **0.025 m** half-edge along the tagged-face normal; detector
+  `tag_size ≈ 0.036 m`. No sim↔real geometry gap to watch.
+- **Tag placement — resolved (user, 2026-06-18): one tag on a single cube face.** Each cube carries
+  exactly one `tag36h11` marker on one face (ID 0 bottom, ID 1 top). The pose source reports the
+  cube center as `tag_pose ⊕ (0.025 m along the tagged-face inward normal)`. The operator places
+  cubes tag-up / tag-toward-camera so the marker is visible to the third-person RealSense pre-grasp;
+  occlusion after grasp is handled by the grasp-transform carry.
 
 ### 5.3 Camera calibration — `scripts/calibrate_camera.py`
-**Eye-to-hand** (camera fixed, observing the workspace; *not* wrist-mounted). Because the RealSense
+**Eye-to-hand, third-person** (resolved: the RealSense is a **fixed third-person camera** observing
+the workspace; *not* wrist-mounted) — placed to see the whole workspace without the arm occluding
+the cubes pre-grasp. Because the RealSense
 ships **factory intrinsics** (read via `pyrealsense2`), this script is **extrinsics-focused**:
 Charuco board **mounted on the gripper**, drive the arm to N varied poses (teleop or scripted),
 capture `(image, O_T_EE)` pairs, detect Charuco, run `cv2.calibrateHandEye` → solve **camera→base**.
@@ -183,13 +188,12 @@ forward-compat payoff.
 3. ~~Base policy on hardware~~ — **resolved (user, 2026-06-18): sim-to-real transfer first.** Load
    the sim mediocre base policy directly (identical obs space); fall back to fresh real collection
    only if the first gated rollout behaves wildly. See §5.7.
-4. ~~Camera~~ — **resolved (user, 2026-06-18): Intel RealSense** (`pyrealsense2`, factory
-   intrinsics, RGB-D). *Still to confirm:* the fixed **eye-to-hand mount location** (must see the
-   whole workspace without the arm occluding the cubes pre-grasp).
-5. ~~AprilTag family/size~~ — **resolved:** `tag36h11`, ID 0=bottom / ID 1=top, `tag_size ≈ 0.036 m`
-   from `scripts/generate_cube_tags.py`. ~~cube edge~~ — **resolved (user, 2026-06-18): 5 cm cubes**
-   (matches the sheet; `cube_size=0.05`, offset 0.025 m — §5.2). *Still to confirm:* tag
-   **placement** on a face that stays visible pre-grasp.
+4. ~~Camera + mount~~ — **resolved (user, 2026-06-18): Intel RealSense, fixed third-person**
+   (`pyrealsense2`, factory intrinsics, RGB-D; eye-to-hand, external, sees the whole workspace).
+5. ~~AprilTag family/size / cube edge / placement~~ — **resolved (user, 2026-06-18):** `tag36h11`,
+   ID 0=bottom / ID 1=top, `tag_size ≈ 0.036 m` from `generate_cube_tags.py`; **5 cm cubes**
+   (`cube_size=0.05`, offset 0.025 m); **one tag on a single face**, placed visible to the
+   third-person camera pre-grasp (§5.2).
 6. **`camera_calib.yaml` in git?** Commit the format/template but gitignore the machine-specific
    values (they differ per lab and must be recalibrated)? Recommendation: template in git, real
    values gitignored.

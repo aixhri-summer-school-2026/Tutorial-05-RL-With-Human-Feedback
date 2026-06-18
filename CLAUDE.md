@@ -76,10 +76,11 @@ tests for the Franka path; run them after touching `mile_franka/`. `config.json`
 policy/mental-model types and paths, logging, save, rollout, **`collector`**,
 **`intervener`**, **`rollout.auto_eval`**).
 
-For `Franka-Stack-Sim-v0`, the task geometry differs from the headless fake env
-(`cube_size=0.06`, `table_z=0.0`, matching the multipanda stacking scene). Scripted
-policies/interveners must take `env.unwrapped.config`; otherwise they silently target the
-fake-env cube heights. `train_mile.py`, `build_base_policy.py`, and
+Cubes are **5 cm everywhere** (`cube_size=0.05`: fake-env default, sim, and real). For
+`Franka-Stack-Sim-v0` the table geometry still differs from the headless fake env
+(`table_z=0.0`, matching the multipanda stacking scene; fake-env default `table_z=0.02`).
+Scripted policies/interveners must take `env.unwrapped.config`; otherwise they silently
+target the fake-env heights. `train_mile.py`, `build_base_policy.py`, and
 `franka_sim_rollout_record.py` follow this rule.
 
 ## Architecture (big picture)

@@ -17,7 +17,7 @@ class StackTaskConfig:
     Lengths are meters in the robot base frame.
     """
 
-    cube_size: float = 0.04                  # cube edge length (< gripper max open)
+    cube_size: float = 0.05                  # cube edge length (< gripper max open)
     gripper_open_width: float = 0.08         # finger separation when open (m)
     gripper_closed_width: float = 0.0        # finger separation when fully closed (m)
 
