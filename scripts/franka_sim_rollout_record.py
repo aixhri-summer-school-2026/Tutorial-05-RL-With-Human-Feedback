@@ -136,8 +136,11 @@ def main():
                 time.sleep(args.video_start_hold)
 
             if args.out_dir:
-                ep_path = os.path.join(args.out_dir, f"ep{saved}.mp4")
                 os.makedirs(args.out_dir, exist_ok=True)
+                # Record to a per-attempt temp name, then rename once the outcome is known.
+                # (Naming by `saved` up front would let the next attempt overwrite a failed
+                # rollout's clip before we get to keep it.)
+                ep_path = os.path.join(args.out_dir, f"_attempt{attempt}.mp4")
                 ep_rec = start_recorder(ep_path, args.display, args.size, args.fps)
                 time.sleep(args.video_start_hold)
 
@@ -161,12 +164,20 @@ def main():
                     all_obs.append(o)
                     all_acts.append(a)
                     all_ep.append(saved)
-                print(f"  -> saved as episode {saved}")
+                if ep_path and os.path.exists(ep_path):
+                    tag = "" if success else "_fail"
+                    os.replace(ep_path, os.path.join(args.out_dir, f"ep{saved}{tag}.mp4"))
+                print(f"  -> saved as episode {saved}{'' if success else ' (failed, kept)'}")
                 saved += 1
             else:
+                # require_success and the rollout failed: keep the clip for review (the data is
+                # still dropped from the dataset) instead of deleting it.
                 if ep_path and os.path.exists(ep_path):
-                    os.unlink(ep_path)
-                print(f"  -> discarded (failed)")
+                    os.replace(ep_path,
+                               os.path.join(args.out_dir, f"failed_attempt{attempt}.mp4"))
+                    print(f"  -> failed; data discarded, video kept (failed_attempt{attempt}.mp4)")
+                else:
+                    print(f"  -> discarded (failed)")
 
             attempt += 1
 
@@ -187,7 +198,10 @@ def main():
     print(f"success rate = {rate:.2f} ({successes} success / {attempt} attempts)")
     print(f"saved {len(all_obs)} transitions -> {args.data}")
     if args.out_dir:
-        print(f"saved {saved} episode videos -> {args.out_dir}")
+        n_vid = len([f for f in os.listdir(args.out_dir) if f.endswith(".mp4")])
+        n_fail = len([f for f in os.listdir(args.out_dir) if f.startswith("failed_attempt")])
+        print(f"saved {n_vid} videos ({saved} kept episodes, {n_fail} failed attempts) "
+              f"-> {args.out_dir}")
     elif args.out:
         print(f"saved video -> {args.out}")
 

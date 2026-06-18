@@ -31,6 +31,9 @@ class FrankaEnv(gym.Env):
 
         self._ee_target = np.zeros(3, dtype=np.float32)
         self._step_count = 0
+        self._success_stable_count = 0
+        self._last_success_top_pos: Optional[np.ndarray] = None
+        self._last_success_pos_delta = float("inf")
 
     def _build_obs(self) -> np.ndarray:
         ee = np.asarray(self.backend.get_ee_position(), dtype=np.float32)
@@ -47,7 +50,26 @@ class FrankaEnv(gym.Env):
         target_z = float(bottom[2]) + c.cube_size
         z_err = abs(float(top[2]) - target_z)
         released = self.backend.get_gripper_width() > c.gripper_open_width - 0.01
-        return xy_off < c.success_xy_tol and z_err < c.success_z_tol and released
+        top_pos = top[:3].astype(np.float32)
+        pos_delta = (
+            np.inf if self._last_success_top_pos is None
+            else float(np.linalg.norm(top_pos - self._last_success_top_pos))
+        )
+        self._last_success_pos_delta = pos_delta
+        stable = (
+            z_err < c.success_z_tol
+            and released
+            and (
+                self._last_success_top_pos is None
+                or pos_delta < c.success_pos_stable_tol
+            )
+        )
+        if stable:
+            self._success_stable_count += 1
+        else:
+            self._success_stable_count = 0
+        self._last_success_top_pos = top_pos
+        return self._success_stable_count >= c.success_stable_steps
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
         super().reset(seed=seed)
@@ -55,6 +77,9 @@ class FrankaEnv(gym.Env):
         self._ee_target = np.asarray(
             self.backend.get_ee_position(), dtype=np.float32).copy()
         self._step_count = 0
+        self._success_stable_count = 0
+        self._last_success_top_pos = None
+        self._last_success_pos_delta = float("inf")
         return self._build_obs(), {"success": 0}
 
     def step(self, action):
@@ -81,7 +106,13 @@ class FrankaEnv(gym.Env):
         self._step_count += 1
         terminated = bool(success)
         truncated = self._step_count >= c.max_steps
-        return obs, float(reward), terminated, truncated, {"success": int(success)}
+        return obs, float(reward), terminated, truncated, {
+            "success": int(success),
+            "success_stable_count": self._success_stable_count,
+            "xy_off": xy_off,
+            "z_err": z_err,
+            "top_pos_delta": self._last_success_pos_delta,
+        }
 
     def close(self):
         self.backend.close()

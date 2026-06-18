@@ -131,8 +131,17 @@ demos.
 
 ### 5.2 Collect → train
 
-- **Collect:** `franka_sim_rollout_record.py` already runs `ScriptedStackPolicy` over
+- **Collect:** `franka_sim_rollout_record.py` runs `ScriptedStackPolicy` over
   `FrankaEnv` and saves `obs / acts / episode` to `.npz` (light deps, runs in-container).
+  Per-episode MP4s are recorded **after `env.reset()` completes**, with short start/end
+  holds and printed start/end EE/cube poses, so the first frames show the reset robot and
+  randomized objects rather than stale state from the previous attempt.
+  BC policy rollout remains a 10 Hz env contract; robot speed is tuned by the shared
+  `StackTaskConfig.action_scale` and then demos/policies are regenerated under that same
+  contract. `env_step_period_s` is the Python command/observation period, not the Cartesian
+  controller's internal control frequency. Each 10 Hz policy action publishes one
+  stair-step equilibrium target; the Cartesian controller tracks and holds that setpoint at
+  its own higher-frequency servo loop.
 - **Train (gap to fill):** `build_base_policy.py` today collects+trains in one process on
   the **fake** env and cannot read an `.npz`. Add a **`--demos <npz>` flag** to
   `build_base_policy.py`: when given, it skips its own scripted collection, loads the saved

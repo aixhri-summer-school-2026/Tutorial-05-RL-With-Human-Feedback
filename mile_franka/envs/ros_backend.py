@@ -22,6 +22,7 @@ All ROS imports are lazy so the package imports with no ROS installed.
 """
 from __future__ import annotations
 
+import re
 import time
 import subprocess
 from typing import Optional
@@ -121,6 +122,11 @@ class MultipandaRosBackend(RobotBackend):
 
         self._gripper_width = float(self.config.gripper_open_width)
         self._gripper_closed = False  # last commanded state
+        # Always ensure the controllers we depend on are actually loaded before reset()
+        # tries to activate them. On a slow cold boot the launch-time spawners can lose
+        # the race against controller_manager and die (exit 1), leaving the controllers
+        # never loaded -- self-heal that here rather than racing param-list.
+        self._wait_for_controller_node()
         if apply_sim_gains:
             self._apply_controller_gains(SIM_STACKING_GAINS)
 
@@ -157,6 +163,88 @@ class MultipandaRosBackend(RobotBackend):
             detail = (result.stderr or result.stdout).strip()
             raise RuntimeError(f"ros2 {' '.join(args)} failed: {detail}")
         return result
+
+    def _list_controllers(self, timeout: float = 10.0):
+        """Return {controller_name: state} from controller_manager, or None if unreachable.
+
+        Queries controller_manager (`ros2 control list_controllers`) rather than the
+        controller's own param node: a loaded controller and a never-loaded one are
+        indistinguishable from `ros2 param list`, but controller_manager is the
+        authoritative source and is up as soon as mujoco_server's ros2_control plugin is.
+        """
+        result = self._run_ros2(["control", "list_controllers"], timeout=timeout, check=False)
+        if result.returncode != 0:
+            return None
+        # `ros2 control list_controllers` colorizes its output with ANSI escapes; strip them
+        # so the controller name (parts[0]) and state (parts[-1]) parse cleanly.
+        clean = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+        states: dict[str, str] = {}
+        for line in clean.splitlines():
+            parts = line.split()
+            if len(parts) >= 3:
+                states[parts[0]] = parts[-1].lower()
+        return states
+
+    def _load_controller(self, controller: str, state: str) -> None:
+        """Load a controller into controller_manager at the given lifecycle state.
+
+        The launch-time spawners can die on a slow cold boot before controller_manager is
+        ready, leaving the controller never loaded. controller_manager already knows the
+        controller's type from sim_stacking_controllers.yaml, so loading it here is
+        idempotent recovery -- it self-heals a lost spawner race deterministically.
+        """
+        self._run_ros2(
+            ["control", "load_controller", controller, "--set-state", state],
+            timeout=20.0, check=False)
+
+    def _wait_for_controller_node(self, timeout: float = 60.0) -> None:
+        """Make the controllers we depend on deterministically ready.
+
+        On a freshly-launched sim the controllers are spawned by the launch file, but on a
+        slow software-GL cold boot those spawners can lose the race against
+        controller_manager coming up and die (exit code 1), so the controllers are never
+        loaded and the param node never appears ("Node not found"). Rather than racing, wait
+        for controller_manager itself, then load any missing required controller via
+        controller_manager (idempotent), and finally confirm the param interface is
+        addressable so a subsequent `ros2 param set` of the gains will not race.
+        """
+        deadline = time.time() + timeout
+        last = "controller_manager not reachable"
+        # 1. Wait for controller_manager to answer, then ensure required controllers loaded.
+        while time.time() < deadline:
+            states = self._list_controllers()
+            if states is not None:
+                if states.get("joint_state_broadcaster") != "active":
+                    self._load_controller("joint_state_broadcaster", "active")
+                if self.controller_name not in states:
+                    self._load_controller(self.controller_name, "inactive")
+                # reset() activates move_to_start when move_to_start_on_reset; its spawner can
+                # die in the same cold-boot race, so self-heal it too (idempotent, inactive).
+                if (self.move_to_start_on_reset
+                        and self.move_to_start_controller not in states):
+                    self._load_controller(self.move_to_start_controller, "inactive")
+                states = self._list_controllers() or {}
+                ready = self.controller_name in states and (
+                    not self.move_to_start_on_reset
+                    or self.move_to_start_controller in states)
+                if ready:
+                    break
+            last = "controller_manager up but %s not loaded" % self.controller_name
+            time.sleep(1.0)
+        else:
+            raise RuntimeError(
+                f"controller {self.controller_name} not loadable within {timeout:.0f}s: {last}")
+        # 2. Confirm the controller's param interface is actually addressable.
+        while time.time() < deadline:
+            result = self._run_ros2(
+                ["param", "list", f"/{self.controller_name}"], timeout=10.0, check=False)
+            if result.returncode == 0:
+                return
+            last = (result.stderr or result.stdout).strip()
+            time.sleep(1.0)
+        raise RuntimeError(
+            f"controller {self.controller_name} loaded but param node not addressable "
+            f"within {timeout:.0f}s: {last}")
 
     def _apply_controller_gains(self, gains: dict[str, float]) -> None:
         """Apply the sim-validated stacking gains to the loaded controller."""
@@ -233,18 +321,29 @@ class MultipandaRosBackend(RobotBackend):
         quat = self._world_quat_to_base([o.x, o.y, o.z, o.w])
         return np.concatenate([pos, quat]).astype(np.float32)
 
+    def _unpause(self, attempts: int = 5) -> None:
+        """Unpause the sim, verifying it took (clock advances) instead of fire-and-forget."""
+        preq = self._SetPause.Request()
+        preq.paused = False
+        for _ in range(attempts):
+            res = self._call(self._set_pause, preq)
+            if res is not None and getattr(res, "success", True):
+                return
+            time.sleep(0.5)
+        raise RuntimeError("failed to unpause sim via /set_pause (clock would stay frozen)")
+
     # --- RobotBackend ----------------------------------------------------------
     def reset(self, np_random: np.random.Generator) -> None:
         if self.reset_controller_target_on_reset:
             self._set_controller_state("inactive", check=False)
 
-        # Unpause the (paused-on-boot) sim.
-        preq = self._SetPause.Request()
-        preq.paused = False
-        self._call(self._set_pause, preq)
+        # Unpause the (paused-on-boot) sim. The sim ignores SetPause until its ros2_control
+        # plugin is fully up, so verify the response and retry rather than silently leaving
+        # the clock frozen (a frozen clock means step() commands never take effect).
+        self._unpause()
 
         self._gripper_closed = True  # force an open command even if our proxy is stale
-        self.set_gripper(-1.0)
+        self._set_gripper(-1.0, wait_result=True, force=True)
         if self.move_to_start_on_reset:
             self._move_to_start()
 
@@ -258,8 +357,8 @@ class MultipandaRosBackend(RobotBackend):
                 if np.linalg.norm(bottom_xy - top_xy) >= c.reset_min_separation:
                     break
             rest_z = c.table_z + c.cube_size / 2.0
-            self._set_body_pose("bottom_cube", [*bottom_xy, rest_z])
-            self._set_body_pose("top_cube", [*top_xy, rest_z])
+            self._set_body_pose_verified("bottom_cube", [*bottom_xy, rest_z])
+            self._set_body_pose_verified("top_cube", [*top_xy, rest_z])
         self._home(activate_controller=True)
 
     def _home(self, activate_controller: bool = False) -> None:
@@ -312,6 +411,23 @@ class MultipandaRosBackend(RobotBackend):
         req.reset_qpos = False
         self._call(self._set_body, req)
 
+    def _set_body_pose_verified(self, name: str, position,
+                                tol: float = 0.015,
+                                attempts: int = 5) -> None:
+        """Set a body pose and verify get_body_state has converged before reset returns."""
+        target = np.asarray(position, dtype=np.float32)
+        last = None
+        for _ in range(attempts):
+            self._set_body_pose(name, target)
+            time.sleep(0.1)
+            last = self.get_body_pose(name)[:3]
+            if float(np.linalg.norm(last - target)) < tol:
+                return
+        raise RuntimeError(
+            f"failed to reset {name} near {target.tolist()}; last pose was "
+            f"{None if last is None else last.tolist()}"
+        )
+
     def _publish_pose(self, position: np.ndarray, orientation: np.ndarray) -> None:
         msg = self._PoseStamped()
         msg.header.frame_id = self.base_frame  # = panda_link0
@@ -337,10 +453,11 @@ class MultipandaRosBackend(RobotBackend):
         while time.time() < deadline:
             self._rclpy.spin_once(self._node, timeout_sec=min(0.01, deadline - time.time()))
 
-    def set_gripper(self, command: float) -> None:
+    def _set_gripper(self, command: float, wait_result: bool = False,
+                     force: bool = False) -> None:
         want_closed = command > 0
         c = self.config
-        if want_closed == self._gripper_closed:
+        if want_closed == self._gripper_closed and not force:
             return  # no state change; don't spam the action server
         self._gripper_closed = want_closed
         grasp_width = min(c.gripper_open_width, max(c.gripper_closed_width, 0.95 * c.cube_size))
@@ -355,6 +472,16 @@ class MultipandaRosBackend(RobotBackend):
         goal.epsilon.outer = 0.02
         future = self._grasp.send_goal_async(goal)
         self._rclpy.spin_until_future_complete(self._node, future, timeout_sec=2.0)
+        if not wait_result or not future.done():
+            return
+        goal_handle = future.result()
+        if goal_handle is None or not goal_handle.accepted:
+            return
+        result_future = goal_handle.get_result_async()
+        self._rclpy.spin_until_future_complete(self._node, result_future, timeout_sec=4.0)
+
+    def set_gripper(self, command: float) -> None:
+        self._set_gripper(command, wait_result=command <= 0)
 
     def get_ee_position(self) -> np.ndarray:
         """Return the controller's O_T_EE position (panda_link0 frame).

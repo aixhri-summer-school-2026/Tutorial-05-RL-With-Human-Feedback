@@ -8,10 +8,16 @@ services:
       dockerfile: docker/Dockerfile
     image: mile:franka-humble
     container_name: mile_sim
+    init: true                             # reap killed mujoco_node children on sim re-launch;
+                                           # without an init, PID 1 (sleep infinity) leaves zombies
+                                           # and their stale DDS participants linger on the graph.
     network_mode: host
     working_dir: /home/user/mile-code
     environment:
-      - DISPLAY=${DISPLAY:-:99}            # host display when set; :99 (Xvfb) otherwise
+      - DISPLAY=:99                        # internal Xvfb (headless default). sim-gui overrides
+                                           # per-exec with the host display (docker exec -e DISPLAY).
+                                           # Must NOT be ${DISPLAY:-:99}: an SSH-forwarded/host
+                                           # DISPLAY leaks in and mujoco_ros GLFW init fails.
       - LIBGL_ALWAYS_SOFTWARE=1            # overridden per-exec by sim-gui for HW GL
       - GALLIUM_DRIVER=llvmpipe
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp

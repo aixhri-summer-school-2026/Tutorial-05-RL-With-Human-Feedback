@@ -3,9 +3,14 @@
 FROM hucebot:franka-humble
 USER root
 
-# Headless X server for MuJoCo GLFW rendering (software GL via llvmpipe).
-RUN apt-get update -qq && apt-get install -y --no-install-recommends xvfb \
- && rm -rf /var/lib/apt/lists/*
+# Headless X server (Xvfb) for MuJoCo GLFW rendering (software GL via llvmpipe) + ffmpeg for
+# x11grab video capture (eval/collect/grasp-demo record the headless display). mujoco_ros' GLFW
+# init needs a reachable X display even headless; without it the sim node dies on boot and the
+# whole controller graph wedges. Verify both landed so the image can never ship without them.
+RUN apt-get update -qq && apt-get install -y --no-install-recommends xvfb ffmpeg \
+ && rm -rf /var/lib/apt/lists/* \
+ && command -v Xvfb >/dev/null && command -v ffmpeg >/dev/null \
+ || { echo "FATAL: Xvfb/ffmpeg not installed" >&2; exit 1; }
 
 # Install the MILE layer. CPU torch wheel keeps the image lean; the MLP trains on CPU.
 # (For a CUDA box, swap the index URL and add `gpus: all` in docker-compose.yml.)

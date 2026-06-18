@@ -39,9 +39,13 @@ def _build_sim_env(config: Optional[StackTaskConfig] = None) -> FrankaEnv:
         config,
         apply_sim_gains=True,
         reset_controller_target_on_reset=True,
-        move_to_start_on_reset=True,
+        # Home purely via cartesian prime->activate (the proven franka_sim_grasp_demo.py path):
+        # cycling the controller inactive->active captures the current EE as the desired pose
+        # (no dive), then _home() drives to the fixed home. The joint-space
+        # move_to_start_example_controller is skipped -- its launch-time spawner loses the
+        # cold-boot race and its activation was the source of the reset timeout.
+        move_to_start_on_reset=False,
         env_step_period_s=0.1,
-        move_to_start_hold_s=4.0,
         home_steps=50,
         home_settle_s=0.8,
     )

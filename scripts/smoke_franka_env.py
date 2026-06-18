@@ -36,7 +36,13 @@ def main():
     move_to(env, [top[0], top[1], lift_z], gripper=1.0)               # lift
     move_to(env, [bottom[0], bottom[1], lift_z], gripper=1.0)         # carry over bottom
     move_to(env, [bottom[0], bottom[1], stack_z], gripper=1.0)        # descend to stack height
-    _, _, term, _, info = env.step(np.array([0, 0, 0, -1.0], dtype=np.float32))  # release
+    term = False
+    info = {"success": 0}
+    for _ in range(c.success_stable_steps):
+        _, _, term, _, info = env.step(
+            np.array([0, 0, 0, -1.0], dtype=np.float32))  # release / hold open
+        if info["success"]:
+            break
 
     assert info["success"] == 1, f"expected success, got {info}"
     assert term is True, "success should terminate the episode"

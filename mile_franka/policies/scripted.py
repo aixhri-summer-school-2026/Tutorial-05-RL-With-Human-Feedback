@@ -39,7 +39,7 @@ BOTTOM_POS = slice(11, 14)
 
 @dataclass
 class ScriptedPolicyConfig:
-    hover_height: float = 0.30        # m above the table for transit
+    hover_height: float = 0.20        # m above the table for transit
     pregrasp_clearance: float = 0.050  # EE clearance above cube top before vertical descent
     preplace_clearance: float = 0.050  # EE clearance above stack target before placing
     grasp_center_offset: float = 0.005  # EE height above cube center while closing
@@ -49,7 +49,10 @@ class ScriptedPolicyConfig:
     pregrasp_xy_tol: float = 0.005    # centered over cube before descending
     pregrasp_z_tol: float = 0.025     # close to the low pregrasp height
     grasp_xy_tol: float = 0.008       # centered before closing gripper
-    grasp_z_tol: float = 0.020        # close enough vertically to close gripper
+    grasp_z_tol: float = 0.008        # close enough vertically to close gripper
+    grasp_stall_z_tol: float = 0.018  # close if descent stalls this close to grasp height
+    grasp_stall_steps: int = 12       # stalled descent steps before closing near grasp
+    grasp_stall_progress_tol: float = 0.001  # max per-step z progress considered stalled
     pre_place_xy_tol: float = 0.012   # centered above stack before descending
     pre_place_z_tol: float = 0.025    # close to the low preplace height
     place_xy_tol: float = 0.012       # release only when horizontally centered
@@ -64,8 +67,8 @@ class ScriptedPolicyConfig:
     max_phase_steps: int = 80         # close-enough guard against controller steady error
     # Mediocre knobs (ignored when mediocre=False):
     aim_xy_bias: float = 0.0          # constant horizontal placement bias (m)
-    aim_xy_noise_std: float = 0.015   # per-episode random horizontal offset std (m)
-    action_noise_std: float = 0.04    # gaussian noise on the [-1,1] action
+    aim_xy_noise_std: float = 0.02   # per-episode random horizontal offset std (m)
+    action_noise_std: float = 0.0    # gaussian noise on the [-1,1] action
     release_height_error: float = 0.010  # release this much too high (m)
 
 
@@ -84,6 +87,8 @@ class ScriptedStackPolicy:
         self._grasp_top = np.zeros(3, dtype=np.float32)
         self._place_bottom = np.zeros(3, dtype=np.float32)
         self._phase_steps = 0
+        self._last_descent_z: Optional[float] = None
+        self._descent_stall_steps = 0
         self._rng = np.random.default_rng()
 
     def reset(self, rng: Optional[np.random.Generator] = None) -> None:
@@ -93,6 +98,8 @@ class ScriptedStackPolicy:
         self._grasp_top = np.zeros(3, dtype=np.float32)
         self._place_bottom = np.zeros(3, dtype=np.float32)
         self._phase_steps = 0
+        self._last_descent_z = None
+        self._descent_stall_steps = 0
         if rng is not None:
             self._rng = rng
         if self.mediocre:
@@ -128,10 +135,28 @@ class ScriptedStackPolicy:
         z_ok = abs(float(target[2] - ee[2])) < z_tol
         return bool(xy_ok and z_ok)
 
+    def _ready_to_grasp(self, ee: np.ndarray, target: np.ndarray) -> bool:
+        xy_ok = np.linalg.norm(target[:2] - ee[:2]) < self.cfg.grasp_xy_tol
+        # Do not close above the grasp pose. A high close brushes the cube instead of
+        # capturing it; a slightly low close is safer in this sim than an early one.
+        z_ok = float(ee[2]) <= float(target[2]) + self.cfg.grasp_z_tol
+        return bool(xy_ok and z_ok)
+
+    def _descent_stalled_near_grasp(self, ee: np.ndarray, target: np.ndarray) -> bool:
+        xy_ok = np.linalg.norm(target[:2] - ee[:2]) < self.cfg.grasp_xy_tol
+        near_z = float(ee[2]) <= float(target[2]) + self.cfg.grasp_stall_z_tol
+        return bool(
+            xy_ok and near_z
+            and self._descent_stall_steps >= self.cfg.grasp_stall_steps
+        )
+
     def _set_phase(self, phase: int) -> None:
         if self._phase != phase:
             self._phase = phase
             self._phase_steps = 0
+            if phase != _DESCEND:
+                self._last_descent_z = None
+                self._descent_stall_steps = 0
 
     def _phase_timed_out(self) -> bool:
         return self._phase_steps >= self.cfg.max_phase_steps
@@ -155,17 +180,14 @@ class ScriptedStackPolicy:
         preplace_z = place_z + self.cfg.preplace_clearance + self._grasp_offset[2]
 
         gripper = -1.0  # default open
-        phase_tol = self.cfg.pos_tol
-        command_phase = self._phase
         self._phase_steps += 1
         if self._phase == _APPROACH:
-            phase_tol = self.cfg.transit_pos_tol
             target = np.array([top[0], top[1], hover_z], dtype=np.float32)
-            if (self._reached_xy_z(ee, target, self.cfg.transit_xy_tol, phase_tol)
+            if (self._reached_xy_z(ee, target, self.cfg.transit_xy_tol,
+                                   self.cfg.transit_pos_tol)
                     or self._phase_timed_out()):
                 self._set_phase(_PREGRASP)
         elif self._phase == _PREGRASP:
-            phase_tol = self.cfg.pregrasp_xy_tol
             target = np.array([top[0], top[1], pregrasp_z], dtype=np.float32)
             if (self._reached_xy_z(
                     ee, target, self.cfg.pregrasp_xy_tol, self.cfg.pregrasp_z_tol)
@@ -174,62 +196,89 @@ class ScriptedStackPolicy:
                 self._grasp_top = top.copy()
                 self._set_phase(_DESCEND)
         elif self._phase == _DESCEND:
-            phase_tol = self.cfg.grasp_xy_tol
             target = np.array(
                 [grasp_top[0], grasp_top[1],
                  max(grasp_z, self.task.table_z + self.cfg.grasp_center_offset)],
                 dtype=np.float32,
             )
-            if (self._reached_xy_z(ee, target, self.cfg.grasp_xy_tol, self.cfg.grasp_z_tol)
-                    or (self._phase_timed_out()
-                        and self._reached_xy_z(ee, target, 0.012, 0.035))):
+            if self._last_descent_z is not None:
+                z_progress = self._last_descent_z - float(ee[2])
+                if 0.0 <= z_progress < self.cfg.grasp_stall_progress_tol:
+                    self._descent_stall_steps += 1
+                else:
+                    self._descent_stall_steps = 0
+            self._last_descent_z = float(ee[2])
+            if self._ready_to_grasp(ee, target) or self._descent_stalled_near_grasp(ee, target):
                 self._set_phase(_GRASP)
         elif self._phase == _GRASP:
-            target, gripper = ee.copy(), 1.0
             self._dwell += 1
             if self._dwell >= self.cfg.dwell_steps:
                 self._grasp_offset = (ee - top).astype(np.float32)
                 self._dwell = 0
                 self._set_phase(_LIFT)
         elif self._phase == _LIFT:
-            phase_tol = self.cfg.transit_pos_tol
             self._grasp_offset = (ee - top).astype(np.float32)
             target, gripper = np.array([ee[0], ee[1], hover_z], dtype=np.float32), 1.0
-            if self._reached(ee, target, phase_tol) or self._phase_timed_out():
+            if self._reached(ee, target, self.cfg.transit_pos_tol) or self._phase_timed_out():
                 self._set_phase(_OVER_BASE)
         elif self._phase == _OVER_BASE:
-            phase_tol = self.cfg.transit_pos_tol
             self._grasp_offset = (ee - top).astype(np.float32)
             target, gripper = np.array([place_xy[0], place_xy[1], hover_z], dtype=np.float32), 1.0
-            if (self._reached_xy_z(ee, target, self.cfg.transit_xy_tol, phase_tol)
+            if (self._reached_xy_z(ee, target, self.cfg.transit_xy_tol,
+                                   self.cfg.transit_pos_tol)
                     or self._phase_timed_out()):
                 self._place_bottom = bottom.copy()
                 self._grasp_offset = (ee - top).astype(np.float32)
                 self._set_phase(_PREPLACE)
         elif self._phase == _PREPLACE:
-            phase_tol = self.cfg.pre_place_xy_tol
             self._grasp_offset = (ee - top).astype(np.float32)
             target = np.array([place_xy[0], place_xy[1], preplace_z], dtype=np.float32)
-            gripper = 1.0
             if (self._reached_xy_z(
                     ee, target, self.cfg.pre_place_xy_tol, self.cfg.pre_place_z_tol)
                     or (self._phase_timed_out()
                         and self._reached_xy_z(ee, target, 0.020, 0.050))):
                 self._set_phase(_PLACE)
         elif self._phase == _PLACE:
-            phase_tol = self.cfg.place_xy_tol
-            target, gripper = top_place_target + self._grasp_offset, 1.0
-            target = target.copy()
-            target[2] -= self.cfg.place_down_bias
             if self._reached_xy_z(top, top_place_target,
                                   self.cfg.place_xy_tol, self.cfg.place_z_tol):
                 self._set_phase(_RELEASE)
         elif self._phase == _RELEASE:
-            target, gripper = ee.copy(), -1.0
             self._dwell += 1
             if self._dwell >= self.cfg.dwell_steps:
                 self._dwell = 0
                 self._set_phase(_DONE)
+
+        # Emit the command for the phase selected by the current observable state. This keeps
+        # recorded BC labels from depending on a hidden one-step-old state-machine phase.
+        command_phase = self._phase
+        if self._phase == _APPROACH:
+            target = np.array([top[0], top[1], hover_z], dtype=np.float32)
+        elif self._phase == _PREGRASP:
+            target = np.array([top[0], top[1], pregrasp_z], dtype=np.float32)
+        elif self._phase == _DESCEND:
+            target = np.array(
+                [grasp_top[0], grasp_top[1],
+                 max(grasp_z, self.task.table_z + self.cfg.grasp_center_offset)],
+                dtype=np.float32,
+            )
+        elif self._phase == _GRASP:
+            target, gripper = ee.copy(), 1.0
+        elif self._phase == _LIFT:
+            self._grasp_offset = (ee - top).astype(np.float32)
+            target, gripper = np.array([ee[0], ee[1], hover_z], dtype=np.float32), 1.0
+        elif self._phase == _OVER_BASE:
+            self._grasp_offset = (ee - top).astype(np.float32)
+            target, gripper = np.array([place_xy[0], place_xy[1], hover_z], dtype=np.float32), 1.0
+        elif self._phase == _PREPLACE:
+            self._grasp_offset = (ee - top).astype(np.float32)
+            target = np.array([place_xy[0], place_xy[1], preplace_z], dtype=np.float32)
+            gripper = 1.0
+        elif self._phase == _PLACE:
+            target, gripper = top_place_target + self._grasp_offset, 1.0
+            target = target.copy()
+            target[2] -= self.cfg.place_down_bias
+        elif self._phase == _RELEASE:
+            target, gripper = ee.copy(), -1.0
         else:  # _DONE
             target, gripper = ee.copy(), -1.0
 

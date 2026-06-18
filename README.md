@@ -43,6 +43,19 @@ You should see `Round: 0` / `Round: 1`, the dataset growing each round, and the 
 
 To use a **live SpaceMouse** instead of the scripted human, set `"intervener": "spacemouse"` in `config_franka.json` (requires `pyspacemouse` + the device attached).
 
+### Multipanda MuJoCo sim path
+
+The sim backend is registered as `Franka-Stack-Sim-v0` and uses the same `FrankaEnv` API as the fake backend, but with the multipanda stacking scene geometry (`cube_size=0.06`, `table_z=0.0`). Scripted policies and scripted interveners derive their task geometry from `env.unwrapped.config`, so fake-env and sim-env runs do not silently mix cube heights.
+
+Use `scripts/franka_sim_grasp_demo.py` only as a slow mechanical/video acceptance check for the controller and gripper. For MILE data collection and training, use env-driven rollouts such as:
+
+```
+DISPLAY=:99 python scripts/franka_sim_rollout_record.py \
+  --episodes 3 --out /tmp/rollout.mp4 --data /tmp/demos.npz
+```
+
+For a smoke run, tiny BC settings are useful for import/API validation, but they are not a quality check; use the normal `build_base_policy.py` defaults when you need a usable mediocre base policy.
+
 ### Toward the real robot
 
 The real backend (hucebot's multipanda_ros2 controller docker), the MuJoCo cube assets, and the Vive/AprilTag swap are gated on hardware bring-up — see the [bring-up checklist](docs/superpowers/notes/2026-06-15-phase2-bringup-checklist.md) and resolve the `CONFIRM@bringup:` markers (`grep -rn CONFIRM@bringup mile_franka`).

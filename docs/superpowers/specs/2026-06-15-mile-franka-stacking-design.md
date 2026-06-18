@@ -131,7 +131,17 @@ Stack the top cube onto the bottom cube.
   gripper via its action server from the gripper command; wait one control period
   (~10 Hz); read new EE pose from the FrankaState broadcaster; build obs; compute
   reward + `info['success']`; return.
-- `reset()`: sim → reset MuJoCo scene + randomize cube poses; real → human-gated.
+- `reset()`: first put the robot into a safe, consistent start state shared by demo
+  collection and learned-policy inference. Sim → launch with a known xacro
+  `initial_positions` ready pose; for each rollout, unpause MuJoCo, force the gripper
+  open, run multipanda's `move_to_start_example_controller` for runtime joint-posture
+  recovery, randomize cube poses, activate the Cartesian controller so its `on_activate()`
+  captures the current EE pose, then command a bounded Cartesian move to the policy home.
+  Do **not** use MuJoCo `/reset` for arm homing in the ROS 2 stack: `mujoco_ros2_control`
+  reset does not restore the Panda posture, and the generic ROS 2 initial-joint loader is
+  NYI. Real → human-gated object reset and operator approval before enabling autonomous
+  policy execution; same invariant that stale Cartesian targets are discarded and motion to
+  home is bounded before the policy can command deltas.
 - Registered via `gym.register` so `FrameStack(4)+FlattenObservation` apply.
 - `mode='sim'|'real'` selects only the `ObjectPoseSource` and reset behavior; the control
   interface is identical (this is the whole point).
@@ -173,6 +183,11 @@ Stack the top cube onto the bottom cube.
 ### 5.5 Scripted policy + BC base policy
 - `scripted_stack_policy` (sim, uses GT poses): state machine
   *above-pick → descend → close → lift → above-base → descend → open*.
+- The scripted policy must be parameterized by the active `FrankaEnv`'s
+  `StackTaskConfig`. The fake backend uses the tutorial defaults (`cube_size=0.04`,
+  `table_z=0.02`); the multipanda MuJoCo stacking scene uses `cube_size=0.06`,
+  `table_z=0.0`. Mixing these values causes wrong grasp/release heights even when the
+  controller is healthy.
 - Deliberately **mediocre**: fixed wrong offset / release too high / coarse alignment /
   action noise so it starts but cannot reliably finish (the regime MILE needs).
 - Generate `(obs, action)` demos → **BC-train** an `ActorCriticPolicy` (imitation BC).
@@ -261,6 +276,9 @@ validated in the lab.**
    correct, `info['success']` toggles when cubes are stacked by hand-driven actions.
 2. **Scripted policy**: completes stacking in sim above some success rate; mediocre
    variant fails at the precision step as intended.
+   `scripts/franka_sim_grasp_demo.py` is a deliberately slow, human-reviewable mechanical
+   acceptance video and should not define MILE collection timing; env-driven rollouts use
+   `Franka-Stack-Sim-v0` through `FrankaEnv`.
 3. **BC base policy**: trains, loads as `ActorCriticPolicy`, rolls out, is mediocre.
 4. **Collector (headless)**: with `scripted_intervener`, produces a dataset whose dict
    keys/shapes exactly match `collect_synthetic_data`'s Box output; feeds `prepare_dataset`

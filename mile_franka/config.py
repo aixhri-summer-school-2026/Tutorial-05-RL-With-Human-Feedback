@@ -31,9 +31,12 @@ class StackTaskConfig:
     action_scale: float = 0.055              # meters of EE delta per 10 Hz action tick
     max_steps: int = 150                     # truncation horizon
 
-    # Success: top cube centered on bottom cube and released.
-    success_xy_tol: float = 0.02             # max horizontal center offset (m)
+    # Success: top cube remains at stack height after release. XY is not part of the final
+    # predicate for sim because a physically stable cube at the target height is enough.
+    success_xy_tol: float = np.inf           # retained for diagnostics / optional tightening
     success_z_tol: float = 0.01              # max error in stacked height (m)
+    success_stable_steps: int = 10           # post-release steps at stack height before success
+    success_pos_stable_tol: float = 0.002    # max cube-center motion per stable step (m)
 
     # Reset randomization: cube centers drawn from an inner margin of the workspace.
     reset_margin: float = 0.05               # m kept clear of workspace xy edges
