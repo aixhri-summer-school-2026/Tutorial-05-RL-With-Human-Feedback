@@ -1,5 +1,7 @@
 # Phase (b) plan — real FR3 + gamepad + AprilTag (home lab) (2026-06-18)
 
+Design spec (for review): [2026-06-18-phase-b-real-fr3-apriltag-design.md](../specs/2026-06-18-phase-b-real-fr3-apriltag-design.md).
+
 Roadmap: **(a) sim + gamepad → (b) real FR3 + gamepad + AprilTag (lab) → (c) France = Vive swap.**
 This plan covers (b): take the validated sim stack to a **real Franka FR3 in the home lab**,
 swapping only the object-pose source (MuJoCo GT → AprilTag), adding camera calibration, and a
@@ -8,11 +10,12 @@ and MILE training are **unchanged** — forward-compat is the standing constrain
 ([[forward-compat-franka]]): lab → France must be config + re-tune, never a rewrite.
 
 ## Preconditions (must be true before starting)
-- **Phase (a) signed off in sim**: full N-round human-in-the-loop run shows success rate
-  improving across rounds with `auto_eval: false`; mediocre base-policy success measured;
-  `COST_LOOKUP` `[70,100]` calibrated against observed human rate (see
-  [cost tuning guide](../notes/2026-06-18-cost-tuning-guide.md)).
-- WIP committed (collect.py / joystick.py / ros_backend.py etc.).
+- **A mediocre base-policy artifact exists** (`make collect-mediocre` → `make base-policy`).
+  **Cost tuning is deferred** (user's call, 2026-06-18): a measured sim success rate and a
+  calibrated sim `COST_LOOKUP` are **not** prerequisites — we go to the real robot now and
+  return to tuning later (see [cost tuning guide](../notes/2026-06-18-cost-tuning-guide.md)).
+  Measured policy improvement is therefore a later milestone, not a Phase (b) gate.
+- WIP committed (collect.py / joystick.py / ros_backend.py etc. — done, `8670bec`).
 - hucebot **multipanda_ros2 controller docker** available and runnable against the real FR3
   (the France lab's image — do **not** roll our own controller).
 - Hardware on hand: FR3 + gripper, fixed-mount webcam, printed AprilTags (known size), a
@@ -122,8 +125,10 @@ against the **real** controller, not just sim. Specifically:
    points down reliably enough to grasp.
 5. A human can teleop-stack via the gamepad against the real robot; collection records clean
    segments (discard/retry works).
-6. Iterative MILE on hardware: success rate improves across rounds, **no autonomous rollout**
-   (`auto_eval: false`), safety invariants held throughout.
+6. A human teleop-stacks via the gamepad on the real robot and the loop records clean segments
+   (discard/retry works), **no autonomous rollout** (`auto_eval: false`), safety invariants held
+   throughout. *(Measured success-rate improvement is deferred to the cost-tuning milestone, not
+   a Phase (b) gate — user's call.)*
 
 ## Risks & mitigations
 - **Wrist-down orientation unreliable** (carry-over, OPEN in sim) → resolve on hardware first
