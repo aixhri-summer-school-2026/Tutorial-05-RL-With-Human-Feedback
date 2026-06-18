@@ -23,3 +23,23 @@ def pose_to_freejoint_qpos(pose: Pose) -> np.ndarray:
     x, y, z = (float(v) for v in pose.position)
     qx, qy, qz, qw = (float(v) for v in pose.orientation)
     return np.array([x, y, z, qw, qx, qy, qz], dtype=np.float64)
+
+
+def joint_writes(model, names: Sequence[str],
+                 positions: Sequence[float]) -> List[Tuple[int, float]]:
+    """Map (joint name, position) pairs to (qpos address, value).
+
+    `model` is a mujoco.MjModel. Joint names absent from the model are skipped,
+    so a mismatched arm_id or namespaced names degrade gracefully (arm stays at
+    rest) instead of erroring. mujoco is imported lazily so this module loads
+    without it for the pure tests.
+    """
+    import mujoco
+
+    writes: List[Tuple[int, float]] = []
+    for name, value in zip(names, positions):
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+        if jid < 0:
+            continue
+        writes.append((int(model.jnt_qposadr[jid]), float(value)))
+    return writes

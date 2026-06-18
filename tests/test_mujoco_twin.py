@@ -12,3 +12,32 @@ def test_pose_to_freejoint_qpos_reorders_quat_to_wxyz():
     assert q.shape == (7,)
     np.testing.assert_allclose(q[:3], [0.1, 0.2, 0.3], atol=1e-6)
     np.testing.assert_allclose(q[3:], [0.7071, 0.0, 0.0, 0.7071], atol=1e-6)
+
+
+def test_joint_writes_maps_known_and_skips_unknown():
+    mujoco = pytest.importorskip("mujoco")
+    from mile_franka.viz.mujoco_twin import joint_writes
+
+    xml = """
+    <mujoco>
+      <worldbody>
+        <body name="b1">
+          <joint name="j1" type="hinge" axis="0 0 1"/>
+          <geom type="box" size="0.1 0.1 0.1"/>
+          <body name="b2" pos="0 0 0.3">
+            <joint name="j2" type="hinge" axis="0 1 0"/>
+            <geom type="box" size="0.1 0.1 0.1"/>
+          </body>
+        </body>
+      </worldbody>
+    </mujoco>
+    """
+    model = mujoco.MjModel.from_xml_string(xml)
+    writes = joint_writes(model, ["j1", "ghost", "j2"], [0.5, 9.9, -0.3])
+
+    by_adr = {adr: val for adr, val in writes}
+    a1 = int(model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "j1")])
+    a2 = int(model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "j2")])
+    assert by_adr[a1] == 0.5
+    assert by_adr[a2] == -0.3
+    assert len(writes) == 2  # unknown "ghost" skipped
