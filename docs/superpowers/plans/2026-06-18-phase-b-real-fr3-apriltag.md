@@ -68,7 +68,13 @@ Generic ROS pose plumbing first, then the AprilTag detector, behind the existing
      cubes and confirm, instead of programmatic randomization.
    - **bounded home** move on reset; conservative workspace bounds (`StackTaskConfig`).
    - `max_steps` human-paced (already 10_000).
-3. **Safety invariants on every real path** (non-negotiable):
+3. **Wrist-down `Q_HOME` joint-space reset** (resolves the orientation risk — spec §5.8):
+   - Compute `Q_HOME` offline via IK (seed = franka ready pose `[0,-π/4,0,-3π/4,0,π/2,π/4]`, solve
+     `DOWN_QUAT` at the home point); store as a constant in `config.py` shared sim↔real.
+   - Add `move_to_joint_config(q)` to the backend; reset = open gripper →
+     `move_to_joint_config(Q_HOME)` → activate Cartesian impedance → settle.
+   - `CONFIRM@bringup`: live joint-command interface name; validate `Q_HOME` clearance on the arm.
+4. **Safety invariants on every real path** (non-negotiable):
    - `rollout.auto_eval: false` — the policy is **never** executed autonomously.
    - operator approval before any motion; bounded Cartesian targets; controller clipping on.
    - clear e-stop / "drop everything" story documented in the runbook.

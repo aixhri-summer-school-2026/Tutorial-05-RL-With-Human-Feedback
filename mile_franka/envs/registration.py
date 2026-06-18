@@ -39,12 +39,15 @@ def _build_sim_env(config: Optional[StackTaskConfig] = None) -> FrankaEnv:
         config,
         apply_sim_gains=True,
         reset_controller_target_on_reset=True,
-        # Home purely via cartesian prime->activate (the proven franka_sim_grasp_demo.py path):
-        # cycling the controller inactive->active captures the current EE as the desired pose
-        # (no dive), then _home() drives to the fixed home. The joint-space
-        # move_to_start_example_controller is skipped -- its launch-time spawner loses the
-        # cold-boot race and its activation was the source of the reset timeout.
-        move_to_start_on_reset=False,
+        # Wrist-down homing: first drive to the known wrist-down joint config (config.Q_HOME,
+        # = the franka ready pose, which is exactly the move_to_start_example_controller goal)
+        # in JOINT space, then _home() activates the Cartesian controller -- which captures the
+        # now-down EE as its equilibrium -- and ramps to the fixed home with DOWN_QUAT. This
+        # replaces relying on the soft impedance controller to *achieve* a down orientation,
+        # which was unreliable. The launch-time spawner cold-boot race that originally caused a
+        # reset timeout is now self-healed in _wait_for_controller_node (the controller is
+        # loaded inactive via controller_manager before activation), so re-enabling is safe.
+        move_to_start_on_reset=True,
         env_step_period_s=0.1,
         home_steps=50,
         home_settle_s=0.8,

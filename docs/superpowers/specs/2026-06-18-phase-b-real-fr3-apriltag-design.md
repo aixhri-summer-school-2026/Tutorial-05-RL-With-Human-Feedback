@@ -126,11 +126,42 @@ Run the Phase 2 bring-up checklist (`notes/2026-06-15-phase2-bringup-checklist.m
 running hucebot container into `ros_backend.py` (`grep -rn CONFIRM@bringup mile_franka`); confirm
 obs shape `(18,)`, EE motion, gripper actuation, and `info['success']` on a hand-stacked pair.
 - **Confirm `DOWN_QUAT`** on hardware (last open marker in `config.py`).
-- ⚠️ **Carry-over risk (OPEN in sim):** wrist down-orientation tracking was unreliable in sim. It
-  **must** be resolved on hardware before the scripted grasp is trusted (raise `rot_stiff` /
-  `rotational_Ki` and let it settle, or set a known initial joint config, or accept a fixed
-  non-vertical approach). This is the single biggest technical risk of the phase. **See §8.2.**
+- ✅ **Wrist down-orientation — resolved (user, 2026-06-18): set a known initial joint config (§5.8).**
+  Instead of relying on the soft impedance controller to *achieve* a down orientation from an
+  arbitrary start, reset the arm to a precomputed wrist-down joint config, then hand over to the
+  Cartesian controller (which captures the current — now down — EE on activation). This removes the
+  dependence on rotational stiffness/settling that was the root of the sim failure.
 - Re-check grasp force (sim bumped to 80 N) and `action_scale` on the real gripper.
+
+### 5.8 Known wrist-down home via joint-space reset (resolves the orientation risk)
+Today `_home()` (`ros_backend.py:364`) only ramps a **Cartesian** equilibrium pose
+(`position, DOWN_QUAT`) through the impedance controller — the soft path that could not hold the
+wrist down in sim. Replace the *start* of homing with a **joint-space** move to a fixed config:
+- **`Q_HOME` constant** (7-vector) in `config.py`: a neutral, retracted, **wrist-down** posture
+  whose TCP is at the home Cartesian point (~`[0.45, 0.0, table_z+0.33]`) with approach `(0,0,-1)`.
+  Compute it **offline via IK** seeded from the Franka "ready" pose
+  `[0, -π/4, 0, -3π/4, 0, π/2, π/4]` (already wrist-down) solving for `DOWN_QUAT` at the home point;
+  store the resulting joint vector as a constant so sim and real share it (**forward-compat**;
+  France inherits the same `Q_HOME`). The ready pose itself is the fallback `Q_HOME` if IK is
+  unavailable.
+- **Joint-space homing on reset, before activating the Cartesian controller.**
+  - *sim — done:* `Q_HOME` **equals the franka ready pose**, which is exactly the goal of the
+    `move_to_start_example_controller` already wired into the backend. The fix is to **re-enable**
+    `move_to_start_on_reset=True` in `_build_sim_env` (it had been disabled over a launch-time
+    cold-boot spawner race that is now self-healed in `_wait_for_controller_node`, which loads the
+    controller inactive via `controller_manager` before activation). Reset then runs:
+    `_move_to_start()` (joint → wrist-down) → `_home(activate_controller=True)` (Cartesian captures
+    the down EE, ramps to home with `DOWN_QUAT`). **Needs a live-sim validation run** (see below).
+  - *real:* the hucebot stack's joint-space controller / move-to-start driven to `Q_HOME`.
+  - **`CONFIRM@bringup`:** the exact joint-command interface name on the live controller; and that
+    the sim `move_to_start` goal matches `Q_HOME` (refine via IK if the home TCP point must move).
+- **Reset sequence becomes:** open gripper → `move_to_joint_config(Q_HOME)` (wrist now physically
+  down) → activate Cartesian impedance (captures the down EE as its equilibrium) → existing
+  Cartesian settle. The 10 Hz policy/scripted loop then only ever commands small **position** deltas
+  with `DOWN_QUAT` held — starting from a genuinely-down pose, so orientation drift no longer
+  prevents grasping.
+- Keep the bounded/operator-gated reset semantics (§5.4) and safety invariants (§5.6); a joint-space
+  move to a fixed `Q_HOME` is bounded and repeatable by construction.
 
 ### 5.6 Safety invariants (non-negotiable, every real path)
 - `rollout.auto_eval: false` — the policy is **never** executed autonomously on the arm.
@@ -181,10 +212,10 @@ forward-compat payoff.
 1. ~~AprilTag detection transport~~ — **resolved:** in-process **pupil-apriltags** on the RealSense
    RGB stream now (fewest moving parts); `RosPoseStampedSource` (§5.1) kept as the seam so a ROS
    node / FoundationPose drops in later.
-2. **Wrist-down orientation** *(still open — biggest technical risk).* Which resolution path for the
-   OPEN orientation-tracking risk — (a) tune `rot_stiff`/`rotational_Ki` + settle time, (b) command
-   a known initial joint config, or (c) accept a fixed non-vertical approach and re-tune the
-   scripted grasp? Decide during §5.5 bring-up on the real arm.
+2. ~~Wrist-down orientation~~ — **resolved (user, 2026-06-18): set a known initial joint config**
+   (option b). Precompute a wrist-down `Q_HOME` via IK, reset to it in joint space, then hand to the
+   Cartesian controller. See §5.8. *Still to confirm at bring-up:* the live joint-command interface
+   name and that `Q_HOME`'s TCP/clearance suit the real workspace.
 3. ~~Base policy on hardware~~ — **resolved (user, 2026-06-18): sim-to-real transfer first.** Load
    the sim mediocre base policy directly (identical obs space); fall back to fresh real collection
    only if the first gated rollout behaves wildly. See §5.7.

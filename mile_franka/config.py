@@ -9,6 +9,19 @@ import numpy as np
 # the multipanda Cartesian-impedance controller expects for "pointing down".
 DOWN_QUAT: np.ndarray = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
 
+# Known wrist-down "neutral retract" joint configuration (panda_joint1..7, radians).
+# The soft Cartesian-impedance controller cannot reliably *achieve* a straight-down wrist
+# from an arbitrary start (rotational stiffness is weak and the 10 Hz moving target never
+# lets orientation settle). So on reset we first drive the arm to this fixed joint config
+# in joint space, THEN activate the Cartesian controller (which captures the now-down EE as
+# its equilibrium); the policy/scripted loop afterwards only commands small position deltas
+# with DOWN_QUAT held. This is the canonical Franka "ready" pose, whose TCP already points
+# straight down — it is both the joint goal of the sim `move_to_start_example_controller`
+# and the IK seed for any refined home. Shared sim<->real so France inherits the same posture.
+# CONFIRM@bringup: that this clears the real workspace; refine via IK at the home TCP point.
+Q_HOME: np.ndarray = np.array(
+    [0.0, -np.pi / 4, 0.0, -3 * np.pi / 4, 0.0, np.pi / 2, np.pi / 4], dtype=np.float32)
+
 
 @dataclass
 class StackTaskConfig:
