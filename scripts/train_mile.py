@@ -272,6 +272,10 @@ def iterative_training(config):
                 gripper_toggle=True,
                 translation_scale=joystick_translation_scale,
             ))
+        elif which == 'keyboard':
+            from mile_franka.teleop.keyboard import KeyboardDevice
+            kb_scale = config['experiment'].get('keyboard_translation_scale', 0.02)
+            intervener = TeleopIntervener(KeyboardDevice(translation_scale=kb_scale))
         else:
             raise ValueError(f'Unknown intervener: {which}')
 
