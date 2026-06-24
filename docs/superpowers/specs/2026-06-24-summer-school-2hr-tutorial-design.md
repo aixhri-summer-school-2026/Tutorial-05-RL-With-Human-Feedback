@@ -82,11 +82,26 @@ Concretely:
 
 ### 4.1 Artifact distribution (avoid the Drive rate limit)
 
-The downloaded MetaWorld expert is **4 models** (`initial_policy` SAC, `expert_policy`,
-`gt_mental_model`, `warm_started_mental_model`); each MILE model is ≈0.7 MB and each demo
-`npz` ≈0.5 MB, so the full bundle (expert + engineered base policy + seed dataset) is only
-**single-digit to low-tens of MB**. The rate-limit risk is Drive throttling request *count*,
-not size.
+The Drive download (`trained_models.zip`, **5.64 MB**, sha256 `48020ef5…`, measured
+2026-06-24) is **4 SB3 models and no dataset**:
+
+| File | Size | Type | obs | act |
+|---|---|---|---|---|
+| `initial_policy` | 2.1M | SAC | Box(156,) f64 | Box(4,) |
+| `expert_policy` | 2.1M | SAC | Box(156,) | Box(4,) |
+| `gt_mental_model` | 849K | BC ActorCritic | Box(156,) | Box(4,) |
+| `warm_started_mental_model` | 849K | BC ActorCritic | Box(156,) | Box(4,) |
+
+`net_arch=[256,256]` throughout. **MetaWorld obs is 156-dim** (peg-insert 39 × `FrameStack(4)`,
+`float64`) and the policies are **SAC** — distinct from the Franka pipeline (90-dim,
+`FrameStack(10)`, `bc`). Tier 1 therefore keeps MetaWorld's *own* obs/policy pipeline; the
+only genuinely shared code is `mile_cont_loss_fn` (the TODO — dim-agnostic, operates on
+action/ν tensors), the 4-DoF action, and `[256,256]`.
+
+The peg-insert **intervention dataset is synthesized at runtime** by `collect_synthetic_data`
+from these four models, so no peg-insert dataset is shipped. The only datasets to bundle are
+the *Franka* base policy (≈0.7 MB) + seed `npz` (≈0.5 MB). Full bundle ≈ **7 MB**. The
+rate-limit risk is Drive throttling request *count*, not size.
 
 - **You hit Drive once** (home lab): `gdown 1bzKGyOmX1ZCmAWnZiq_sAFRxi3AXvm4t`, add the
   engineered-mediocre base policy + seed dataset, bundle into `tutorial-artifacts.tar` with a
