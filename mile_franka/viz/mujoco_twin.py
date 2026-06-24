@@ -25,6 +25,33 @@ def pose_to_freejoint_qpos(pose: Pose) -> np.ndarray:
     return np.array([x, y, z, qw, qx, qy, qz], dtype=np.float64)
 
 
+def base_pose_to_world_qpos(pose: Pose, base_xpos: Sequence[float],
+                            base_xquat_wxyz: Sequence[float]) -> np.ndarray:
+    """Transform a robot-base-frame Pose into world free-joint qpos.
+
+    AprilTag/GT cube poses are expressed in the robot base frame (panda_link0),
+    but a MuJoCo free joint stores world coordinates. The franka MJCF places
+    panda_link0 with a non-identity world transform (quat (wxyz) [0,0,0,1] =
+    180 deg about Z), so writing base coords straight to qpos renders the cubes
+    rotated about the base -- behind the arm and mirrored. Compose the base
+    body's world transform (xpos, xquat in MuJoCo wxyz order) with the pose so
+    the cube lands where the real cube is relative to the arm.
+    """
+    from scipy.spatial.transform import Rotation
+
+    base_xpos = np.asarray(base_xpos, dtype=np.float64).reshape(3)
+    w, x, y, z = (float(v) for v in base_xquat_wxyz)
+    R_world_base = Rotation.from_quat([x, y, z, w])  # scipy uses xyzw order
+
+    p_base = np.asarray(pose.position, dtype=np.float64).reshape(3)
+    world_pos = base_xpos + R_world_base.apply(p_base)
+
+    R_tag = Rotation.from_quat(np.asarray(pose.orientation, dtype=np.float64))
+    qx, qy, qz, qw = (R_world_base * R_tag).as_quat()  # xyzw
+    return np.array([world_pos[0], world_pos[1], world_pos[2],
+                     qw, qx, qy, qz], dtype=np.float64)
+
+
 def joint_writes(model, names: Sequence[str],
                  positions: Sequence[float]) -> List[Tuple[int, float]]:
     """Map (joint name, position) pairs to (qpos address, value).
@@ -34,7 +61,7 @@ def joint_writes(model, names: Sequence[str],
     rest) instead of erroring. mujoco is imported lazily so this module loads
     without it for the pure tests.
     """
-    import mujoco
+    import mujoco  # twin viewer runs on mujoco 2.3.7 in the tutorial image (see Dockerfile)
 
     writes: List[Tuple[int, float]] = []
     for name, value in zip(names, positions):
