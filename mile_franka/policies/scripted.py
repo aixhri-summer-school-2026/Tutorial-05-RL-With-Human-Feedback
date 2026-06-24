@@ -61,14 +61,25 @@ class ScriptedPolicyConfig:
     dwell_steps: int = 5              # steps to hold while grasping/releasing
     waypoint_step: float = 0.035      # max Cartesian waypoint advance per 10 Hz tick
     descent_waypoint_step: float = 0.010  # slower vertical insertion toward grasp/place
-    slow_radius: float = 0.09         # begin slowing this far from a phase goal
+    slow_radius: float = 0.05         # begin slowing this far from a phase goal
     slow_fraction: float = 0.45       # waypoint fraction of remaining error near goal
     min_waypoint_step: float = 0.006  # keep enough progress to avoid static waits
     max_phase_steps: int = 80         # close-enough guard against controller steady error
+    # Per-episode domain randomization (applies to mediocre AND expert demos): teaches the
+    # base policy that the cube can be carried high or low across the transit, and placed with
+    # a small gap above the bottom cube (the cube drops the rest of the way and settles).
+    randomize_heights: bool = True
+    hover_height_low: float = 0.10    # transit/lift altitude drawn U[low, high] per episode (m)
+    hover_height_high: float = 0.25
+    place_jitter_low: float = 0.002   # release this much above the bottom-cube top (m)
+    place_jitter_high: float = 0.015
     # Mediocre knobs (ignored when mediocre=False):
     aim_xy_bias: float = 0.0          # constant horizontal placement bias (m)
-    aim_xy_noise_std: float = 0.02   # per-episode random horizontal offset std (m)
-    action_noise_std: float = 0.0    # gaussian noise on the [-1,1] action
+    aim_xy_noise_std: float = 0.01   # per-episode random horizontal offset std (m)
+    action_noise_std: float = 0.01   # gaussian noise on the [-1,1] action; small jitter so a
+                                     # sampled rollout can escape a near-zero-mean stall without
+                                     # costing grasp precision (the longer horizon is the real
+                                     # fix for the grasp aliasing; tunable)
     release_height_error: float = 0.010  # release this much too high (m)
 
 
@@ -90,6 +101,9 @@ class ScriptedStackPolicy:
         self._last_descent_z: Optional[float] = None
         self._descent_stall_steps = 0
         self._rng = np.random.default_rng()
+        # Per-episode randomized heights (set in reset(); fall back to fixed config values).
+        self._hover_height = self.cfg.hover_height
+        self._place_offset = self.cfg.release_height_error if self.mediocre else 0.0
 
     def reset(self, rng: Optional[np.random.Generator] = None) -> None:
         self._phase = _APPROACH
@@ -108,6 +122,14 @@ class ScriptedStackPolicy:
                 + self._rng.normal(0.0, self.cfg.aim_xy_noise_std, size=2).astype(np.float32))
         else:
             self._episode_offset = np.zeros(2, dtype=np.float32)
+        if self.cfg.randomize_heights:
+            self._hover_height = float(self._rng.uniform(
+                self.cfg.hover_height_low, self.cfg.hover_height_high))
+            self._place_offset = float(self._rng.uniform(
+                self.cfg.place_jitter_low, self.cfg.place_jitter_high))
+        else:
+            self._hover_height = self.cfg.hover_height
+            self._place_offset = self.cfg.release_height_error if self.mediocre else 0.0
 
     def _delta_to_pose(self, ee: np.ndarray, command_pose: np.ndarray) -> np.ndarray:
         return np.clip((command_pose - ee) / self.task.action_scale, -1.0, 1.0)
@@ -166,7 +188,7 @@ class ScriptedStackPolicy:
         ee = np.asarray(frame[EE], dtype=np.float32)
         top = np.asarray(frame[TOP_POS], dtype=np.float32)
         bottom = np.asarray(frame[BOTTOM_POS], dtype=np.float32)
-        hover_z = self.task.table_z + self.cfg.hover_height
+        hover_z = self.task.table_z + self._hover_height
         cube_top_z = top[2] + 0.5 * self.task.cube_size
         pregrasp_z = cube_top_z + self.cfg.pregrasp_clearance
         grasp_top = self._grasp_top if self._phase in (_DESCEND, _GRASP, _LIFT) else top
@@ -174,8 +196,7 @@ class ScriptedStackPolicy:
         place_bottom = self._place_bottom if self._phase in (
             _PREPLACE, _PLACE, _RELEASE, _DONE) else bottom
         place_xy = place_bottom[:2] + (self._episode_offset if self.mediocre else 0.0)
-        place_z = place_bottom[2] + self.task.cube_size + (
-            self.cfg.release_height_error if self.mediocre else 0.0)
+        place_z = place_bottom[2] + self.task.cube_size + self._place_offset
         top_place_target = np.array([place_xy[0], place_xy[1], place_z], dtype=np.float32)
         preplace_z = place_z + self.cfg.preplace_clearance + self._grasp_offset[2]
 

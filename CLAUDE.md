@@ -63,8 +63,12 @@ make mile                     # iterative MILE run (config_franka.json, Franka-S
 make shell                    # interactive in-container shell (env sourced)
 make joystick-check           # print live gamepad axes/buttons (sanity check)
 make pose-test                # run 20 pose-layer unit tests (no ROS/hardware needed)
+make franka-up               # launch the real FR3 controller stack (separate franka_ros2 container, CycloneDDS); ROBOT_IP/LOAD_GRIPPER overridable
+make franka-shell            # shell in the franka_ros2 container (CycloneDDS sourced)
 make apriltag-up              # (in-container) launch D415 + apriltag_ros + calibration static tf
 make calibrate-camera         # (in-container) eye-to-hand calibration capture -> camera_calib.yaml
+make close-gripper            # (in-container) clamp the gripper (e.g. onto the calib board); GRIP_FORCE/CLOSE_WIDTH overridable
+make open-gripper             # (in-container) release the gripper; OPEN_WIDTH overridable
 make mile-real                # (in-container) iterative MILE on real FR3 (config_franka_real.json)
 make eval-real                # (in-container) policy eval on real FR3
 make view-twin                # (in-container, host display) read-only MuJoCo twin: cubes from AprilTag, arm from /joint_states; safe to run alongside mile-real/eval-real
@@ -151,9 +155,12 @@ imports and the smoke scripts run with no ROS installed.
   sim and real) + `DOWN_QUAT`.
 - **`mile_franka/envs/`** — `RobotBackend` ABC (`backend.py`); `FakeWorld`/`FakeRobotBackend`/
   `WorldPoseSource` (`fake_backend.py`, a kinematic pick-and-place world for headless runs);
-  `FrankaEnv` (`franka_env.py`, gym env: delta→Cartesian target, 18-dim obs `[ee_xyz,
-  gripper_width, top_pose(7), bottom_pose(7)]` → `(72,)` after `FrameStack(4)+Flatten`,
-  `info['success']`); `registration.py` (`register_franka_envs()`, `make_franka_env()`,
+  `FrankaEnv` (`franka_env.py`, gym env: delta→Cartesian target; reduced 9-dim obs
+  `[ee_xyz, gripper_width, top_xyz, bottom_xy]` (quats + bottom_z dropped; `--include_bottom_z`
+  adds bottom_z → 10-dim) → `(90,)` after `FrameStack(10)+Flatten`; `privileged_frame()`
+  returns the full 18-dim GT frame for scripted planners; real obs z is mapped into the training
+  table frame by `TablePlaneCanonicalizer`; `info['success']`); `registration.py`
+  (`register_franka_envs()`, `make_franka_env()`, `FRANKA_FRAME_STACK=10`,
   `FAKE_ENV_ID="Franka-Stack-Fake-v0"`); `ros_backend.py` (`MultipandaRosBackend`, real,
   **bring-up-gated** — joins hucebot's controller docker DDS graph).
 - **`mile_franka/pose/`** — `Pose`/`ObjectPoseSource` ABCs (`base.py`);
@@ -161,15 +168,21 @@ imports and the smoke scripts run with no ROS installed.
   with D415 on 2026-06-18); `RosPoseStampedSource` (`ros_posestamped.py`, generic
   FoundationPose-ready seam); `CameraCalibration` (`calibration.py`, camera→base extrinsics
   file format + YAML load + static-transform args); `MujocoGtPoseSource` (`mujoco_gt.py`,
-  sim-only); `cube_center_pose()` pure half-edge offset helper.
+  sim-only); `CanonicalCubePoseSource`/`TablePlaneCanonicalizer` (`canonical.py`, real-only:
+  the former stamps the training cube quaternion, the latter measures the table height from the
+  resting cube and shifts `ee_z`/`top_z` into the training table frame — the lifted cube is
+  tracked continuously, never snapped); `cube_center_pose()` pure half-edge offset helper.
 - **`mile_franka/teleop/`** — `TeleopDevice`/`TeleopReading` ABCs (`base.py`);
   `JoystickDevice` (`joystick.py`, pygame gamepad — **the default dev teleop device**, ν via a
   stateful clutch-toggle segment) and `SpaceMouseDevice` (`spacemouse.py`, kept as an alternative,
   ν = clutch-or-motion) — both use an injectable raw reader so they load/test without hardware.
   Select via `intervener: joystick|spacemouse` in `config_franka.json` (currently `joystick`).
 - **`mile_franka/policies/`** — `ScriptedStackPolicy` (`scripted.py`, mediocre state machine
-  over GT poses; pass the active env's `StackTaskConfig` for sim/hardware); `build_actor_critic_policy`/`train_bc` (`bc.py`, MILE-arch policy + imitation
-  BC); `collect_scripted_demos` (`demos.py`).
+  over GT poses — reads `env.unwrapped.privileged_frame()`, not the reduced obs; per-episode
+  randomizes transit/lift height U[0.10,0.25] and placement gap U[0.002,0.015]; pass the active
+  env's `StackTaskConfig` for sim/hardware); `build_actor_critic_policy`/`train_bc` (`bc.py`,
+  MILE-arch policy + imitation BC, plain `NormalizeFeaturesExtractor`+RunningNorm — the reduced
+  obs already drops the dead dims, so no masking); `collect_scripted_demos` (`demos.py`).
 - **`mile_franka/collect.py`** — `Collector` (replaces `collect_synthetic_data`; returns the
   same `(dataset, mean_score, mean_success)` tuple) + `ScriptedIntervener` (headless scripted
   "human") / `TeleopIntervener` (adapts any `TeleopDevice`). Emits the Box dataset via

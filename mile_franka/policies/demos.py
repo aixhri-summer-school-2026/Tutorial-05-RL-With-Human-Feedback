@@ -20,7 +20,10 @@ def collect_scripted_demos(env: gym.Env, policy: ScriptedStackPolicy,
         obs, _ = env.reset()
         policy.reset(rng)
         for _ in range(env.unwrapped.config.max_steps):
-            action = policy.act(np.asarray(obs)[-18:])
+            # The scripted policy plans over full GT poses (incl. bottom_z / quats) the reduced
+            # observation drops, so feed it the env's privileged frame; the recorded obs below
+            # is still the reduced policy observation used for BC.
+            action = policy.act(env.unwrapped.privileged_frame())
             next_obs, _, terminated, truncated, info = env.step(action)
             done = bool(terminated or truncated)
             obs_list.append(np.asarray(obs, dtype=np.float32))

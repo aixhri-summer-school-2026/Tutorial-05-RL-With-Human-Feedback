@@ -110,7 +110,10 @@ def main() -> None:
         success = 0
         try:
             for t in range(max_t):
-                action, _ = policy.predict(np.asarray(state), deterministic=True)
+                # Sample, don't take the mean: a mean action that collapses to ~0 at
+                # OOD/grasp states produces no motion -> identical obs -> the same ~0
+                # action forever (deterministic closed-loop deadlock). See build_base_policy.
+                action, _ = policy.predict(np.asarray(state), deterministic=False)
                 state, _, terminated, truncated, info = env.step(action)
                 if info["success"] or terminated or truncated:
                     success = int(info["success"])

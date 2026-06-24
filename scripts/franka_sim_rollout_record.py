@@ -21,7 +21,8 @@ import gymnasium as gym
 import numpy as np
 from gymnasium.wrappers import FlattenObservation, FrameStack
 
-from mile_franka.envs.registration import SIM_ENV_ID, register_franka_envs
+from mile_franka.envs.registration import (
+    FRANKA_FRAME_STACK, SIM_ENV_ID, register_franka_envs)
 from mile_franka.policies.scripted import ScriptedStackPolicy
 
 
@@ -60,8 +61,9 @@ def stop_recorder(proc):
         proc.wait(timeout=10)
 
 
-def current_state(obs):
-    frame = np.asarray(obs)[-18:]
+def current_state(env):
+    # Diagnostic only: read the full GT frame (the reduced obs no longer carries bottom_z/quats).
+    frame = np.asarray(env.unwrapped.privileged_frame())
     return {
         "ee": frame[:3].copy(),
         "width": float(frame[3]),
@@ -89,7 +91,7 @@ def run_episode(env, policy, obs):
     obs_list, act_list = [], []
     info = {}
     for _ in range(env.unwrapped.config.max_steps):
-        action = policy.act(np.asarray(obs)[-18:])
+        action = policy.act(env.unwrapped.privileged_frame())
         next_obs, _, terminated, truncated, info = env.step(action)
         obs_list.append(np.asarray(obs, dtype=np.float32))
         act_list.append(np.asarray(action, dtype=np.float32))
@@ -129,7 +131,7 @@ def main():
     max_attempts = args.max_attempts if args.max_attempts > 0 else 3 * args.episodes
 
     register_franka_envs()
-    env = FlattenObservation(FrameStack(gym.make(SIM_ENV_ID), 4))
+    env = FlattenObservation(FrameStack(gym.make(SIM_ENV_ID), FRANKA_FRAME_STACK))
     if args.max_steps is not None:
         env.unwrapped.config.max_steps = args.max_steps
         print(f"max_steps overridden to {args.max_steps}")
@@ -163,7 +165,7 @@ def main():
             ep_path = None
             ep_rec = None
             obs = reset_episode(env, policy, rng, args.seed + attempt)
-            start_state = current_state(obs)
+            start_state = current_state(env)
             print(f"attempt {attempt}: start {format_state(start_state)}")
 
             if args.out and not args.out_dir and combined_rec is None:
@@ -182,7 +184,7 @@ def main():
                 time.sleep(args.video_start_hold)
 
             obs_list, act_list, success, final_obs = run_episode(env, policy, obs)
-            end_state = current_state(final_obs)
+            end_state = current_state(env)
             if ep_rec is not None or combined_rec is not None:
                 time.sleep(args.video_end_hold)
 

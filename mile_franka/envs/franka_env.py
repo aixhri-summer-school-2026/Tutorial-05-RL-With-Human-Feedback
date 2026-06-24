@@ -17,17 +17,26 @@ class FrankaEnv(gym.Env):
     metadata = {"render_modes": []}
 
     def __init__(self, backend: RobotBackend, pose_source: ObjectPoseSource,
-                 config: Optional[StackTaskConfig] = None, mode: str = "sim"):
+                 config: Optional[StackTaskConfig] = None, mode: str = "sim",
+                 obs_include_bottom_z: bool = False, z_canonicalizer=None):
         super().__init__()
         self.backend = backend
         self.pose_source = pose_source
         self.config = config if config is not None else StackTaskConfig()
         self.mode = mode
+        # Reduced observation: quats and (by default) bottom_z are dropped because they carry
+        # no task signal — cubes don't rotate and the bottom cube's height is the (canonical)
+        # table plane. obs_include_bottom_z keeps bottom_z for the 10-dim variant.
+        self.obs_include_bottom_z = obs_include_bottom_z
+        # Real-only vertical canonicalizer (TablePlaneCanonicalizer) mapping ee_z/top_z into the
+        # training table frame; None on sim/fake (identity), keeping the env backend-agnostic.
+        self.z_canonicalizer = z_canonicalizer
 
         self.action_space = gym.spaces.Box(
             low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
+        obs_dim = 10 if obs_include_bottom_z else 9
         self.observation_space = gym.spaces.Box(
-            low=-np.inf, high=np.inf, shape=(18,), dtype=np.float32)
+            low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
 
         self._ee_target = np.zeros(3, dtype=np.float32)
         self._step_count = 0
@@ -35,12 +44,52 @@ class FrankaEnv(gym.Env):
         self._last_success_top_pos: Optional[np.ndarray] = None
         self._last_success_pos_delta = float("inf")
 
-    def _build_obs(self) -> np.ndarray:
+    def privileged_frame(self) -> np.ndarray:
+        """Full 18-dim ground-truth frame ``[ee(3), grip(1), top_pose(7), bottom_pose(7)]``.
+
+        Scripted policies/interveners plan over full GT poses (incl. bottom_z and the cube
+        quats), which the reduced policy observation drops. They read this instead of the obs
+        so the BC observation can shrink without starving the scripted planner.
+        """
         ee = np.asarray(self.backend.get_ee_position(), dtype=np.float32)
         width = np.array([self.backend.get_gripper_width()], dtype=np.float32)
         top = self.pose_source.get_pose(TOP_CUBE).to_array()
         bottom = self.pose_source.get_pose(BOTTOM_CUBE).to_array()
         return np.concatenate([ee, width, top, bottom]).astype(np.float32)
+
+    def _build_obs(self) -> np.ndarray:
+        ee = np.asarray(self.backend.get_ee_position(), dtype=np.float32)
+        width = float(self.backend.get_gripper_width())
+        top = self.pose_source.get_pose(TOP_CUBE).to_array()
+        bottom = self.pose_source.get_pose(BOTTOM_CUBE).to_array()
+        ee_z, top_z, bottom_z = float(ee[2]), float(top[2]), float(bottom[2])
+        if self.z_canonicalizer is not None:
+            # Real-only: shift the vertical channels into the training table frame using the
+            # table height measured from the resting cube(s). The lifted (top) cube is tracked
+            # continuously — never snapped — so the lift is visible immediately. Deltas are
+            # frame-invariant, so the action/target path needs no matching correction.
+            delta = self.z_canonicalizer.delta(bottom_z, top_z)
+            ee_z += delta
+            top_z += delta
+            bottom_z += delta
+        feats = [float(ee[0]), float(ee[1]), ee_z, width,
+                 float(top[0]), float(top[1]), top_z,
+                 float(bottom[0]), float(bottom[1])]
+        if self.obs_include_bottom_z:
+            feats.append(bottom_z)
+        return np.array(feats, dtype=np.float32)
+
+    def _pose_staleness(self) -> dict:
+        """Per-cube pose age + a combined stale flag for the step info.
+
+        Flag-only: the policy keeps acting on the last good pose (occlusion is
+        routine during a stack), but a human MILE intervener can see when the
+        observation is being held rather than freshly perceived.
+        """
+        src = self.pose_source
+        ages = {name: src.pose_age(name) for name in (TOP_CUBE, BOTTOM_CUBE)}
+        stale = any(src.is_stale(name) for name in (TOP_CUBE, BOTTOM_CUBE))
+        return {"pose_stale": bool(stale), "pose_age": ages}
 
     def _is_success(self) -> bool:
         c = self.config
@@ -91,7 +140,13 @@ class FrankaEnv(gym.Env):
         self._ee_target = np.clip(
             actual_ee + action[:3] * c.action_scale,
             c.workspace_low, c.workspace_high).astype(np.float32)
-        self.backend.set_equilibrium_pose(self._ee_target, DOWN_QUAT)
+        # Command the backend's own wrist-down orientation (the one _home() settles to),
+        # not the module default: the fr3 stack needs FR3_DOWN_QUAT, and sending the
+        # multipanda DOWN_QUAT instead made the FR3 Cartesian-pose controller hold on a
+        # discontinuous orientation so the arm never moved. Backends without a configured
+        # down_quat (the fake kinematic world) ignore orientation, so the fallback is inert.
+        self.backend.set_equilibrium_pose(
+            self._ee_target, getattr(self.backend, "down_quat", DOWN_QUAT))
         self.backend.set_gripper(float(action[3]))
 
         obs = self._build_obs()
@@ -112,6 +167,7 @@ class FrankaEnv(gym.Env):
             "xy_off": xy_off,
             "z_err": z_err,
             "top_pos_delta": self._last_success_pos_delta,
+            **self._pose_staleness(),
         }
 
     def close(self):

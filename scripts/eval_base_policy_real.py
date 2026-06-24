@@ -82,7 +82,12 @@ def main() -> None:
         _confirm(f"Episode {ep+1}: about to RESET (arm will move to home).")
 
         state, _ = env.reset()
+        unwrapped = env.unwrapped
+        ee0 = np.asarray(unwrapped.backend.get_ee_position(), dtype=np.float32)
         print("Reset complete — arm is at Cartesian home.")
+        print(f"  home EE   : [{ee0[0]:.3f} {ee0[1]:.3f} {ee0[2]:.3f}]")
+        print(f"  down_quat : {np.round(getattr(unwrapped.backend, 'down_quat', None), 4).tolist()}")
+        print(f"  action_scale: {unwrapped.config.action_scale} m/tick")
 
         # --- Place cubes ---
         _confirm("Place the cubes in the workspace, then press Enter.")
@@ -92,8 +97,21 @@ def main() -> None:
         success = 0
         try:
             for t in range(max_t):
-                action, _ = policy.predict(np.asarray(state), deterministic=True)
-                state, _, terminated, truncated, info = env.step(action)
+                # Sample, don't take the mean: a mean action that collapses to ~0 at
+                # OOD/grasp states produces no motion -> identical obs -> the same ~0
+                # action forever (deterministic closed-loop deadlock). See build_base_policy.
+                action, _ = policy.predict(np.asarray(state), deterministic=False)
+                ee_before = np.asarray(unwrapped.backend.get_ee_position(), dtype=np.float32)
+                state, reward, terminated, truncated, info = env.step(action)
+                ee_after = np.asarray(unwrapped.backend.get_ee_position(), dtype=np.float32)
+                act = np.asarray(action, dtype=np.float32).reshape(4)
+                cmd_cm = float(np.linalg.norm(act[:3]) * unwrapped.config.action_scale * 100.0)
+                moved_cm = float(np.linalg.norm(ee_after - ee_before) * 100.0)
+                tgt = np.round(unwrapped._ee_target, 3).tolist()
+                print(f"  t={t:3d} act=[{act[0]:+.3f} {act[1]:+.3f} {act[2]:+.3f} g={act[3]:+.3f}] "
+                      f"cmd={cmd_cm:4.1f}cm moved={moved_cm:4.2f}cm "
+                      f"ee=[{ee_after[0]:.3f} {ee_after[1]:.3f} {ee_after[2]:.3f}] tgt={tgt} "
+                      f"rew={reward:+.2f} succ={info.get('success')}")
                 if info.get("success") or terminated or truncated:
                     success = int(info.get("success", 0))
                     steps_used.append(t + 1)

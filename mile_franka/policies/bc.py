@@ -28,6 +28,10 @@ def build_actor_critic_policy(observation_space: gym.spaces.Space,
         action_space=action_space,
         lr_schedule=get_schedule_fn(1),
         net_arch=[256, 256],
+        # Plain normalizing extractor: the reduced observation already excludes the
+        # uninformative dims (cube quaternions; bottom_z by default), so there are no dead
+        # dims to mask. The real AprilTag's orientation/table-height are handled upstream by
+        # the env's TablePlaneCanonicalizer + the dropped channels, not by zeroing here.
         features_extractor_class=NormalizeFeaturesExtractor,
         features_extractor_kwargs=dict(normalize_class=RunningNorm),
     )

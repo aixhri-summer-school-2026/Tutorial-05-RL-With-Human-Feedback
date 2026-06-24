@@ -44,6 +44,16 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 rand = np.random.randint(0, 1000)
 
 
+def _features_extractor_class(env_name):
+    """Plain normalizing extractor everywhere.
+
+    The Franka path used to mask dead dims (cube quats + bottom_z); the reduced observation
+    now excludes them outright, so mental models / policies match the base policy
+    (mile_franka.policies.bc) with the plain extractor and no masking is needed.
+    """
+    return NormalizeFeaturesExtractor
+
+
 def build_franka_or_metaworld_env(env_name):
     """Build the wrapped (FrameStack+Flatten) training env for either backend."""
     if env_name + '-goal-observable' in ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE:
@@ -93,7 +103,7 @@ def offline_training(config):
                                         action_space=env.action_space,
                                         lr_schedule=get_schedule_fn(1),
                                         net_arch=[256, 256],
-                                        features_extractor_class=NormalizeFeaturesExtractor,
+                                        features_extractor_class=_features_extractor_class(env_name),
                                         features_extractor_kwargs=dict(normalize_class=RunningNorm),
                                         )
     elif config['experiment']['mental_model_type'] == 'qnetwork':
@@ -108,7 +118,7 @@ def offline_training(config):
     policy.to(device)
     mental_model.to(device)
     if config['experiment']['use_warm_start']:
-        mental_model.load(config['experiment']['warm_start_path'])
+        mental_model = ActorCriticPolicy.load(config['experiment']['warm_start_path'])
 
     print(config)
     now = datetime.datetime.now()
@@ -176,7 +186,7 @@ def iterative_training(config):
                                         action_space=env.action_space,
                                         lr_schedule=get_schedule_fn(1),
                                         net_arch=[256, 256],
-                                        features_extractor_class=NormalizeFeaturesExtractor,
+                                        features_extractor_class=_features_extractor_class(env_name),
                                         features_extractor_kwargs=dict(normalize_class=RunningNorm),
                                         )
         gt_mental_model = None
@@ -204,7 +214,7 @@ def iterative_training(config):
         gt_mental_model.to(device)
 
     if config['experiment']['use_warm_start']:
-        mental_model.load(config['experiment']['warm_start_path'])
+        mental_model = ActorCriticPolicy.load(config['experiment']['warm_start_path'])
 
     print(config)
     now = datetime.datetime.now()
@@ -244,12 +254,14 @@ def iterative_training(config):
         if which == 'scripted':
             from mile_franka.policies.scripted import ScriptedStackPolicy
             task_config = getattr(env.unwrapped, 'config', None)
-            intervener = ScriptedIntervener(ScriptedStackPolicy(task_config, mediocre=False))
+            intervener = ScriptedIntervener(
+                ScriptedStackPolicy(task_config, mediocre=False), env=env)
         elif which == 'spacemouse':
             from mile_franka.teleop.spacemouse import SpaceMouseDevice
             intervener = TeleopIntervener(SpaceMouseDevice())
         elif which == 'joystick':
             from mile_franka.teleop.joystick import JoystickDevice
+            joystick_translation_scale = config['experiment'].get('joystick_translation_scale', 0.5)
             # Xbox 360: left-stick-forward=axis1(-=fwd), left-stick-left=axis0(-=left), right-stick-up=axis4(-=up)
             # clutch=RB(5), gripper=A(0), done=Start(7)
             intervener = TeleopIntervener(JoystickDevice(
@@ -258,7 +270,7 @@ def iterative_training(config):
                 ax_z=4, ax_z_sign=-1.0,
                 clutch_button=5, gripper_button=0, done_button=7, discard_button=6,
                 gripper_toggle=True,
-                translation_scale=0.2,
+                translation_scale=joystick_translation_scale,
             ))
         else:
             raise ValueError(f'Unknown intervener: {which}')
@@ -305,6 +317,15 @@ def iterative_training(config):
         log_to_file('Dataset size: {}'.format(len(additional_data['state'])), EXPERIMENT_NAME+'_log.txt')
         log_to_file(f"Percentage of no-intervention: {additional_data['intervention'].count(0)/len(additional_data['intervention'])}", EXPERIMENT_NAME+'_log.txt')
         log_to_file(f"Success rate: {mean_success_rate}", EXPERIMENT_NAME+'_log.txt')
+
+        # Save per-round raw intervention data for reproducibility/debugging.
+        save_dir = config['experiment']['save']['outdir']
+        os.makedirs(save_dir, exist_ok=True)
+        round_data_path = os.path.join(save_dir, f'intervention_data_round{round}.pkl')
+        with open(round_data_path, 'wb') as f:
+            pickle.dump(additional_data, f)
+        log_to_file(f'Saved round data -> {round_data_path}', EXPERIMENT_NAME+'_log.txt')
+
         for key in dataset.keys():
             if round == 0:
                 dataset[key].extend(additional_data[key])
@@ -317,6 +338,12 @@ def iterative_training(config):
         train_loader = DataLoader(train_set, batch_size=config['train']['batch_size'], shuffle=True)
         val_loader = DataLoader(valid_set, batch_size=config['train']['batch_size'], shuffle=False)
         trainer.train(train_loader, val_loader, round)
+
+        # Save accumulated dataset after this round's training for reproducibility.
+        accum_path = os.path.join(save_dir, f'accumulated_dataset_round{round}.pkl')
+        with open(accum_path, 'wb') as f:
+            pickle.dump(dataset, f)
+        log_to_file(f'Saved accumulated dataset -> {accum_path}', EXPERIMENT_NAME+'_log.txt')
 
     if config['experiment']['logging']['log_wandb']:
         run.finish()
