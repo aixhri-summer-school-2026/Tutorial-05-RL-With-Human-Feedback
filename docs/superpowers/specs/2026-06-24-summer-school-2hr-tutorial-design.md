@@ -74,11 +74,32 @@ Concretely:
   remove the "MetaWorld-free" comment.
 - `mile_franka/viz/mujoco_twin.py` + `scripts/view_cubes_mujoco.py`: adapt to the
   `mujoco==2.3.7` Python API so `make view-twin` still works in this image.
-- Bake the downloaded expert models (`gdown 1bzKGyOmX1ZCmAWnZiq_sAFRxi3AXvm4t`) and the
-  pre-baked Franka base policy into the image (or a shipped volume) so Tier 1/Tier 3 need no
-  network on the day.
+- **Do not** `gdown` at image-build time (every homework build would hammer Drive's
+  per-file quota). Artifacts are decoupled from the image and mounted as a volume
+  (Section 4.1).
 - Validate at home: both the MetaWorld synthetic loop and the Franka sim loop run in the
   rebuilt image. (MetaWorld-v2 on `mujoco==2.3.7` is its native version — low risk.)
+
+### 4.1 Artifact distribution (avoid the Drive rate limit)
+
+The downloaded MetaWorld expert is **4 models** (`initial_policy` SAC, `expert_policy`,
+`gt_mental_model`, `warm_started_mental_model`); each MILE model is ≈0.7 MB and each demo
+`npz` ≈0.5 MB, so the full bundle (expert + engineered base policy + seed dataset) is only
+**single-digit to low-tens of MB**. The rate-limit risk is Drive throttling request *count*,
+not size.
+
+- **You hit Drive once** (home lab): `gdown 1bzKGyOmX1ZCmAWnZiq_sAFRxi3AXvm4t`, add the
+  engineered-mediocre base policy + seed dataset, bundle into `tutorial-artifacts.tar` with a
+  published **SHA256**.
+- **Re-host as a GitHub Release asset** on the tutorial repo (robust CDN, no quota,
+  versioned). Participants already clone the repo for the homework build. (Small enough to
+  git-LFS instead, but a Release keeps the clone lean.)
+- **Participants download once, as homework**, via a `make` verb that pulls the Release asset
+  (never Drive), unpacks to the artifacts volume, and verifies the checksum.
+- **Venue fallback:** the same tarball on USB / LAN, so a missed/failed homework download is
+  a few-second local copy — zero internet on the day.
+- `make tutorial-check` asserts the artifacts volume is present and complete (checksum), so a
+  missing/partial bundle is caught at home, not at 0:05 in the session.
 
 ## 5. Teleop: keyboard default, Vive optional
 
@@ -94,9 +115,14 @@ Concretely:
 
 ## 6. The one guarded TODO — the MILE loss
 
-A single fill-in-the-blank, the conceptual heart of the method, slotted into Tier 3 just
-before training: **implement `mile_cont_loss_fn`** — BCE on the intervention flag ν **+**
-Gaussian NLL of the human action **only on ν=1 steps**.
+A single fill-in-the-blank, the conceptual heart of the method, done **up front (before
+Tier 1)**: **implement `mile_cont_loss_fn`** — BCE on the intervention flag ν **+** Gaussian
+NLL of the human action **only on ν=1 steps**.
+
+The loss lives in shared `mile/algorithm.py`, used by **every training tier**. So the loss a
+participant writes is what trains the MetaWorld peg-insert policy in **Tier 1** *and* their
+own Franka policy in **Tier 3**. Tier 1's guaranteed clean improvement is therefore the
+**immediate validation that their loss is correct**; Tier 3 simply reuses it on their data.
 
 Guards (so it never blocks the flow):
 - Production `mile/algorithm.py` stays intact. The exercise is a **tutorial scaffold**: a
@@ -106,8 +132,8 @@ Guards (so it never blocks the flow):
   loss) that goes green when correct.
 - **Answer key**: a `solutions/` reference; `make tutorial-train` auto-applies it if the
   participant's version is absent/failing, so Tier 3 always proceeds.
-- **Time-boxed** (~10 min). Framing: "you've collected your interventions — now implement
-  the loss that learns from them, verify, then train."
+- **Time-boxed** (~10 min). Framing: "before you run anything, implement the heart of MILE;
+  you'll watch it train the paper's policy in Tier 1, then your own robot in Tier 3."
 
 ## 7. The 2-hour flow
 
@@ -117,21 +143,25 @@ container (`make shell`); each tier is a single `make` verb.
 - **0:00–0:10 · Land & verify.** `make up && make shell`; `make tutorial-check` (asserts
   `metaworld`/`mile`/`mile_franka` import, expert + base-policy artifacts present). 5-min
   MILE framing (ν, intervention model, joint policy + mental-model training).
-- **0:10–0:30 · Tier 1 — MetaWorld, method on autopilot (no human).**
+- **0:10–0:22 · Implement the heart of MILE (the one TODO).** Fill in `mile_cont_loss_fn`
+  (BCE on ν + Gaussian NLL on ν=1 steps); `make tutorial-check-loss` goes green. This loss
+  trains *both* the Tier 1 and Tier 3 policies. Answer key auto-applies if unfinished.
+- **0:22–0:40 · Tier 1 — MetaWorld, your loss on the paper benchmark (no human).**
   `make tutorial-metaworld`: synthetic human from the downloaded expert, `auto_eval: true`;
-  watch success climb across 2 rounds. "This is the role you'll play next."
-- **0:30–0:35 · Tier 2 — Franka fake, same code, your task (headless, quick).**
+  watch success climb across 2 rounds — trained by *the loss you just wrote*. "This is the
+  role you'll play next."
+- **0:40–0:45 · Tier 2 — Franka fake, same code, your task (headless, quick).**
   `make tutorial-fake`: pre-baked mediocre base policy (~0.5); a 5-minute look at the 9-dim
   obs / 4-DoF action and the engineered failure mode. Also the laptop fallback if MuJoCo is
   heavy.
-- **0:35–0:50 · Visual sim + learn to intervene.** `make sim-up` + `make sim-gui`;
+- **0:45–1:00 · Visual sim + learn to intervene.** `make sim-up` + `make sim-gui`;
   `make tutorial-teleop`: keyboard free-play (clutch = ν, gripper toggle) to get the feel.
-- **0:50–1:25 · Tier 3 — be the human in sim.** `make eval-base` (before) →
-  **implement the loss** + `make tutorial-check-loss` → `make tutorial-collect` (clutch in
-  when the policy is about to fail, 1–2 episodes) → `make tutorial-train` (1 round) →
-  `make eval-after`. The payoff: your interventions moved the number. A seed dataset behind
-  the scenes ensures the delta shows.
-- **~1:00–1:45 · Tier 4 — real FR3 station (parallel queue).** Staffed live robot;
+- **1:00–1:30 · Tier 3 — be the human in sim.** `make eval-base` (before) →
+  `make tutorial-collect` (clutch in when the policy is about to fail, 1–2 episodes) →
+  `make tutorial-train` (1 round, *reusing the loss you wrote*) → `make eval-after`. The
+  payoff: your interventions moved the number. A seed dataset behind the scenes ensures the
+  delta shows.
+- **~1:05–1:45 · Tier 4 — real FR3 station (parallel queue).** Staffed live robot;
   `make franka-up`; participants rotate in and teleop a real stack with the **keyboard**
   (or the **Vive** if wired). Sim work continues in parallel; the robot never gates the room.
 - **1:45–2:00 · Wrap.** What was identical sim→real (same Cartesian-impedance controller,
@@ -161,6 +191,10 @@ container (`make shell`); each tier is a single `make` verb.
 4. **Engineered-mediocre base policy + seed intervention dataset**: a base policy with a
    *single* fixable failure mode so a few interventions reliably move the eval number; seed
    dataset as insurance.
+4b. **Artifact bundle + re-host** (Section 4.1): one-time `gdown`, assemble
+   `tutorial-artifacts.tar` + SHA256, publish as a GitHub Release asset; a `make
+   fetch-artifacts` verb that pulls the Release (not Drive), unpacks to the volume, and
+   verifies the checksum; prepare the USB/LAN copy.
 5. **Loss exercise scaffold** (Section 6): blanked function + docstring spec + answer key +
    `make tutorial-check-loss` test.
 6. **Tutorial `make` verbs**: `tutorial-check`, `tutorial-metaworld`, `tutorial-fake`,
@@ -188,7 +222,11 @@ container (`make shell`); each tier is a single `make` verb.
 1. Unified image builds; `import metaworld, mile, mile_franka` all succeed; `make
    tutorial-check` passes; `make view-twin` still opens on `mujoco==2.3.7`.
 2. `make tutorial-metaworld` finishes in ~10 min and shows success rate improving across
-   rounds.
+   rounds, trained by the participant-supplied `mile_cont_loss_fn` (or the auto-applied
+   answer key).
+2b. `make fetch-artifacts` pulls the bundle from the GitHub Release (not Drive), unpacks to
+   the volume, and the checksum verifies; `make tutorial-check` fails clearly if the bundle
+   is missing/partial.
 3. `make tutorial-fake` reports a mediocre (~0.3–0.7) base-policy success.
 4. `KeyboardDevice` unit tests pass; `make tutorial-teleop` reads keys and toggles ν/gripper
    in the sim window.
