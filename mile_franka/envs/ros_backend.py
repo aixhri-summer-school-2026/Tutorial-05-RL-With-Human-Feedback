@@ -22,6 +22,7 @@ All ROS imports are lazy so the package imports with no ROS installed.
 """
 from __future__ import annotations
 
+import os
 import re
 import time
 import subprocess
@@ -29,7 +30,7 @@ from typing import Optional
 
 import numpy as np
 
-from mile_franka.config import StackTaskConfig
+from mile_franka.config import DOWN_QUAT, StackTaskConfig
 from mile_franka.envs.backend import RobotBackend
 
 # Confirmed live names (hucebot:franka-humble, franka_sim_cartesian_impedance.launch.py).
@@ -77,11 +78,28 @@ class MultipandaRosBackend(RobotBackend):
                  env_step_period_s: float = ENV_STEP_PERIOD_S,
                  move_to_start_hold_s: float = 8.0,
                  home_steps: int = 80,
-                 home_settle_s: float = 1.5):
+                 home_settle_tol: float = 0.015,
+                 home_settle_timeout_s: float = 6.0,
+                 setpoint_substep_m: float = 0.003,
+                 error_recovery_action: Optional[str] = None,
+                 down_quat: Optional[np.ndarray] = None):
         import rclpy
         from geometry_msgs.msg import PoseStamped
         from franka_msgs.action import Grasp
         from rclpy.action import ActionClient
+        try:
+            # Move = "position the fingers to a width" (no grasp force, moves either
+            # direction). This is the correct primitive to OPEN: franka_gripper's Grasp
+            # only clamps inward with force and reports success even when it closes, so
+            # grasp(0.08) physically *closes* the gripper. Some sim gripper nodes lack
+            # Move; we fall back to Grasp for opening there (sim honors the width).
+            from franka_msgs.action import Move as _Move
+        except Exception:
+            _Move = None
+        try:
+            from franka_msgs.action import ErrorRecovery as _ErrorRecovery
+        except Exception:  # older franka_msgs without the action — recovery just no-ops
+            _ErrorRecovery = None
 
         # sim=True joins the multipanda MuJoCo graph (mujoco_ros services for pause +
         # ground-truth body poses); sim=False is the real-FR3 path: no mujoco_ros, the world
@@ -93,6 +111,8 @@ class MultipandaRosBackend(RobotBackend):
                              "the real env must place cubes via an operator-gated reset")
 
         self.config = config if config is not None else StackTaskConfig()
+        self.down_quat = np.asarray(down_quat if down_quat is not None else DOWN_QUAT,
+                                    dtype=np.float32)
         self.base_frame = base_frame
         self.ee_body = ee_body
         self.randomize_on_reset = randomize_on_reset
@@ -104,15 +124,26 @@ class MultipandaRosBackend(RobotBackend):
         self.env_step_period_s = float(env_step_period_s)
         self.move_to_start_hold_s = float(move_to_start_hold_s)
         self.home_steps = int(home_steps)
-        self.home_settle_s = float(home_settle_s)
+        self.home_settle_tol = float(home_settle_tol)
+        self.home_settle_timeout_s = float(home_settle_timeout_s)
+        self.setpoint_substep_m = float(setpoint_substep_m)
         self._controller_activated_by_backend = False
 
         if not rclpy.ok():
-            rclpy.init()
+            # Do NOT let rclpy install its default SIGINT handler: that handler shuts down
+            # the context on Ctrl-C, which invalidates the node mid-eval. The operator
+            # Ctrl-Cs to end an episode (caught by the eval/collect loop), so with the
+            # default handler the *next* episode's reset() dies on the first ROS call with
+            # "rcl node's context is invalid". With NO, Ctrl-C raises an ordinary
+            # KeyboardInterrupt the script already handles, and the context survives across
+            # episodes.
+            from rclpy.signals import SignalHandlerOptions
+            rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
         self._rclpy = rclpy
         self._node = rclpy.create_node("mile_franka_backend")
         self._PoseStamped = PoseStamped
         self._Grasp = Grasp
+        self._Move = _Move
 
         self._pub = self._node.create_publisher(PoseStamped, EQUILIBRIUM_TOPIC, 10)
         # Real franka_gripper grasp action is "franka_gripper_node/grasp" (verified in
@@ -120,6 +151,19 @@ class MultipandaRosBackend(RobotBackend):
         # server "~/grasp"); sim default below is the multipanda sim gripper node. Same
         # franka_msgs/action/Grasp message type. CONFIRM@bringup: the real gripper namespace.
         self._grasp = ActionClient(self._node, Grasp, grasp_action)
+        # Move action shares the gripper namespace ("…/grasp" -> "…/move"). Used to OPEN.
+        move_action = grasp_action.rsplit("/grasp", 1)[0] + "/move"
+        self._move = (ActionClient(self._node, _Move, move_action)
+                      if _Move is not None else None)
+
+        # Error-recovery action (real only). After a motion reflex the FrankaHardwareInterface
+        # drops the command interfaces until a franka_msgs/ErrorRecovery goal is sent, which
+        # otherwise makes the next reset's controller switch fail. No client => recovery no-ops.
+        self._ErrorRecovery = _ErrorRecovery
+        self._error_recovery = None
+        if not self.sim and error_recovery_action and _ErrorRecovery is not None:
+            self._error_recovery = ActionClient(
+                self._node, _ErrorRecovery, error_recovery_action)
 
         # mujoco_ros services (pause + GT body poses) exist only in the sim graph.
         self._get_body = self._set_body = self._set_pause = None
@@ -141,6 +185,7 @@ class MultipandaRosBackend(RobotBackend):
         # Subscribe to the controller's EE pose (O_T_EE, already in panda_link0 frame).
         # Cached so get_ee_position() stays non-blocking.
         self._ee_curr_pose: Optional[np.ndarray] = None
+        self._ee_curr_quat: Optional[np.ndarray] = None  # xyzw, base frame
         self._node.create_subscription(
             PoseStamped, EE_CURR_TOPIC,
             self._ee_curr_callback, 1)
@@ -160,6 +205,8 @@ class MultipandaRosBackend(RobotBackend):
         """Cache the controller's current EE pose (panda_link0 frame, no flip needed)."""
         p = msg.pose.position
         self._ee_curr_pose = np.array([p.x, p.y, p.z], dtype=np.float32)
+        o = msg.pose.orientation
+        self._ee_curr_quat = np.array([o.x, o.y, o.z, o.w], dtype=np.float32)
 
     def _spin_once_for_ee(self, timeout: float = 0.5) -> None:
         """Spin briefly to let the subscription callback fire and populate _ee_curr_pose."""
@@ -176,18 +223,52 @@ class MultipandaRosBackend(RobotBackend):
         return future.result()
 
     def _run_ros2(self, args: list[str], *, timeout: float = 10.0,
-                  check: bool = True) -> subprocess.CompletedProcess:
-        result = subprocess.run(
-            ["ros2", *args],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=timeout,
-        )
+                  check: bool = True, no_iceoryx: bool = False) -> subprocess.CompletedProcess:
+        # The sim's CycloneDDS iceoryx shared-memory transport degrades/breaks ros2 CLI calls:
+        # node-graph discovery fails (`ros2 node list` empty -> `ros2 param` "Node not found")
+        # and control service calls (switch_controller) time out through the daemon — while the
+        # sim/backend DATA path still needs iceoryx for large AprilTag images. So disable shared
+        # memory for these tiny control-plane CLI subprocesses in sim only. The real path is
+        # untouched (its franka_ros2 stack has no iceoryx discovery issue), keeping eval-real working.
+        env = None
+        if no_iceoryx or self.sim:
+            env = {**os.environ, "CYCLONEDDS_URI": ""}
+        try:
+            result = subprocess.run(
+                ["ros2", *args],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout,
+                env=env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            # A `ros2 control`/`ros2 param` CLI that hangs to the timeout almost always means
+            # there is no controller_manager on the DDS graph -- i.e. the controller/sim (or the
+            # real franka_control2 bringup) is not running. Surface that instead of an opaque
+            # TimeoutExpired traceback out of backend construction. check=False callers
+            # (e.g. _list_controllers) get a synthetic failed result so they can retry/degrade.
+            if check:
+                raise RuntimeError(
+                    f"ros2 {' '.join(args)} timed out after {timeout:.0f}s -- is the "
+                    "controller running on this DDS graph? (start the sim with `make sim-up`, "
+                    "or the real Franka bringup, before the real env)") from exc
+            return subprocess.CompletedProcess(args, returncode=124, stdout="",
+                                               stderr="timed out")
         if check and result.returncode != 0:
             detail = (result.stderr or result.stdout).strip()
             raise RuntimeError(f"ros2 {' '.join(args)} failed: {detail}")
         return result
+
+    def _run_param(self, verb: str, rest: list[str], *, timeout: float = 20.0,
+                   check: bool = False) -> subprocess.CompletedProcess:
+        """Run `ros2 param <verb> ...`. In sim, route around the iceoryx node-discovery break:
+        use --no-daemon (direct discovery, bypassing the iceoryx-poisoned CLI daemon) and disable
+        shared memory, so the controller node resolves. The real path keeps the default daemon
+        (its franka_ros2 stack has no iceoryx discovery issue)."""
+        flags = ["--no-daemon", "--spin-time", "5"] if self.sim else []
+        return self._run_ros2(["param", verb, *flags, *rest],
+                              timeout=timeout, check=check, no_iceoryx=self.sim)
 
     def _list_controllers(self, timeout: float = 10.0):
         """Return {controller_name: state} from controller_manager, or None if unreachable.
@@ -213,23 +294,22 @@ class MultipandaRosBackend(RobotBackend):
     def _load_controller(self, controller: str, state: str) -> None:
         """Load a controller into controller_manager at the given lifecycle state.
 
-        The launch-time spawners can die on a slow cold boot before controller_manager is
-        ready, leaving the controller never loaded. controller_manager already knows the
-        controller's type from sim_stacking_controllers.yaml, so loading it here is
-        idempotent recovery -- it self-heals a lost spawner race deterministically.
+        The launch file no longer spawns controllers (they were removed because the
+        spawners reliably lose the race against controller_manager's ~20 s warm-up).
+        controller_manager already knows each controller's type from
+        sim_stacking_controllers.yaml, so loading it here is the primary (idempotent) path.
         """
         self._run_ros2(
             ["control", "load_controller", controller, "--set-state", state],
-            timeout=20.0, check=False)
+            timeout=45.0, check=False)
 
     def _wait_for_controller_node(self, timeout: float = 60.0) -> None:
         """Make the controllers we depend on deterministically ready.
 
-        On a freshly-launched sim the controllers are spawned by the launch file, but on a
-        slow software-GL cold boot those spawners can lose the race against
-        controller_manager coming up and die (exit code 1), so the controllers are never
-        loaded and the param node never appears ("Node not found"). Rather than racing, wait
-        for controller_manager itself, then load any missing required controller via
+        The mujoco_ros2_control plugin creates the controller_manager node, but its service
+        callbacks can take ~20 s to become responsive on a cold boot. Rather than racing with
+        launch-time spawners (which timeout and kill the launch), wait here for
+        controller_manager to answer, then load any missing required controller via
         controller_manager (idempotent), and finally confirm the param interface is
         addressable so a subsequent `ros2 param set` of the gains will not race.
         """
@@ -240,18 +320,32 @@ class MultipandaRosBackend(RobotBackend):
             states = self._list_controllers()
             if states is not None:
                 if states.get("joint_state_broadcaster") != "active":
-                    self._load_controller("joint_state_broadcaster", "active")
+                    # The broadcaster is often loaded-but-'unconfigured' (the launch loads it
+                    # but its spawner loses the controller_manager warm-up race). Two facts make
+                    # a single set-state active insufficient: load_controller --set-state is a
+                    # no-op once the controller is already loaded, and you CANNOT activate
+                    # directly from 'unconfigured'. So load it only if truly missing, then step
+                    # the lifecycle explicitly: configure (-> inactive) then activate. Both
+                    # steps are idempotent for the already-inactive case. (The activate CLI may
+                    # report a 10 s timeout while the switch still succeeds — check=False, and
+                    # the loop's ready-check re-reads the authoritative state next iteration.)
+                    if "joint_state_broadcaster" not in states:
+                        self._load_controller("joint_state_broadcaster", "active")
+                    if (self._list_controllers() or {}).get("joint_state_broadcaster") != "active":
+                        self._set_named_controller_state("joint_state_broadcaster", "inactive")
+                        self._set_named_controller_state("joint_state_broadcaster", "active")
                 if self.controller_name not in states:
                     self._load_controller(self.controller_name, "inactive")
-                # reset() activates move_to_start when move_to_start_on_reset; its spawner can
-                # die in the same cold-boot race, so self-heal it too (idempotent, inactive).
+                # reset() activates move_to_start when move_to_start_on_reset; load it
+                # here so it is ready when reset() needs to switch to it.
                 if (self.move_to_start_on_reset
                         and self.move_to_start_controller not in states):
                     self._load_controller(self.move_to_start_controller, "inactive")
                 states = self._list_controllers() or {}
-                ready = self.controller_name in states and (
-                    not self.move_to_start_on_reset
-                    or self.move_to_start_controller in states)
+                ready = (self.controller_name in states
+                         and states.get("joint_state_broadcaster") == "active"
+                         and (not self.move_to_start_on_reset
+                              or self.move_to_start_controller in states))
                 if ready:
                     break
             last = "controller_manager up but %s not loaded" % self.controller_name
@@ -261,8 +355,7 @@ class MultipandaRosBackend(RobotBackend):
                 f"controller {self.controller_name} not loadable within {timeout:.0f}s: {last}")
         # 2. Confirm the controller's param interface is actually addressable.
         while time.time() < deadline:
-            result = self._run_ros2(
-                ["param", "list", f"/{self.controller_name}"], timeout=10.0, check=False)
+            result = self._run_param("list", [f"/{self.controller_name}"], check=False)
             if result.returncode == 0:
                 return
             last = (result.stderr or result.stdout).strip()
@@ -274,10 +367,8 @@ class MultipandaRosBackend(RobotBackend):
     def _apply_controller_gains(self, gains: dict[str, float]) -> None:
         """Apply the sim-validated stacking gains to the loaded controller."""
         for name, value in gains.items():
-            self._run_ros2(
-                ["param", "set", f"/{self.controller_name}", name, str(value)],
-                timeout=5.0,
-            )
+            self._run_param(
+                "set", [f"/{self.controller_name}", name, str(value)], check=True)
 
     def _activate_controller(self) -> None:
         """Activate so the controller captures the current EE pose as its desired pose."""
@@ -293,6 +384,44 @@ class MultipandaRosBackend(RobotBackend):
             detail = (result.stderr or result.stdout).strip()
             raise RuntimeError(f"failed to activate {self.controller_name}: {detail}")
         self._controller_activated_by_backend = True
+
+    def _reset_controller_target(self) -> None:
+        """Discard a stale equilibrium target before re-homing, WITHOUT cycling the controller.
+
+        The Cartesian controller captures its desired pose when it activates, so the
+        stack-native way to drop a stale target is to cycle inactive->active. But on the real
+        FR3 a deactivate->reactivate of the Effort controller trips
+        communication_constraints_violation: the mode-switch transient aborts the libfranka
+        control loop ("Cannot perform this operation while another control or read operation
+        is running"), which kills control mid-reset -- the arm then homes trivially (already
+        there) but never moves again. So:
+          - controller INACTIVE: do nothing; the upcoming activation captures the current
+            pose as the desired anyway.
+          - controller ACTIVE, real: re-seed the equilibrium target to the CURRENT pose by
+            publishing it (no mode switch) -- same "discard stale target" effect, no reflex.
+          - controller ACTIVE, sim: keep the simple inactive->active cycle (no FR3 firmware,
+            the mode-switch hazard does not exist).
+        """
+        import rclpy as _rclpy
+        if not _rclpy.ok():
+            # rclpy was shut down (Ctrl-C SIGINT handler in a previous episode calls
+            # rclpy.shutdown()). The upcoming _home(activate_controller=True) will
+            # re-activate the controller which captures the current EE as equilibrium,
+            # so skipping the re-seed here is harmless — it just means the first ramp
+            # step may start from a stale target rather than the current pose.
+            return
+        states = self._list_controllers() or {}
+        if states.get(self.controller_name) != "active":
+            return
+        if self.sim:
+            self._set_controller_state("inactive", check=False)
+            return
+        self._ee_curr_pose = None
+        self._spin_once_for_ee()
+        cur = self.get_ee_position()
+        quat = (self._ee_curr_quat.copy() if self._ee_curr_quat is not None
+                else np.asarray(self.down_quat, dtype=np.float32))
+        self._publish_pose(cur, quat)
 
     def _set_controller_state(self, state: str, *, check: bool = False) -> None:
         self._set_named_controller_state(self.controller_name, state, check=check)
@@ -310,6 +439,30 @@ class MultipandaRosBackend(RobotBackend):
             raise RuntimeError(f"failed to set {controller} {state}: {detail}")
         if controller == self.controller_name:
             self._controller_activated_by_backend = state == "active" and result.returncode == 0
+
+    def _recover_from_errors(self) -> None:
+        """Send a franka ErrorRecovery goal to clear a reflex, if a recovery server exists.
+
+        After a motion reflex (e.g. communication_constraints_violation) the
+        FrankaHardwareInterface keeps the cartesian_pose_command interfaces unavailable
+        until an error-recovery is performed; without this every subsequent reset's
+        controller switch is rejected. No-op (short wait) when no server is on the graph.
+        """
+        import rclpy as _rclpy
+        if not _rclpy.ok():
+            return  # rclpy was shut down by a previous Ctrl-C; can't send recovery goal
+        if self._error_recovery is None:
+            return
+        if not self._error_recovery.wait_for_server(timeout_sec=2.0):
+            return  # no recovery server (e.g. sim, or wrong action name) — nothing to do
+        goal = self._ErrorRecovery.Goal()
+        future = self._error_recovery.send_goal_async(goal)
+        self._rclpy.spin_until_future_complete(self._node, future, timeout_sec=5.0)
+        handle = future.result()
+        if handle is None or not handle.accepted:
+            return
+        result_future = handle.get_result_async()
+        self._rclpy.spin_until_future_complete(self._node, result_future, timeout_sec=5.0)
 
     def _move_to_start(self) -> None:
         self._set_controller_state("inactive", check=False)
@@ -359,8 +512,13 @@ class MultipandaRosBackend(RobotBackend):
 
     # --- RobotBackend ----------------------------------------------------------
     def reset(self, np_random: np.random.Generator) -> None:
+        # Clear any FR3 reflex first: a tripped reflex (e.g. from the previous episode)
+        # leaves the command interfaces unavailable, so the controller switch below would
+        # be rejected. Recovery restores them before we deactivate/re-home.
+        if not self.sim:
+            self._recover_from_errors()
         if self.reset_controller_target_on_reset:
-            self._set_controller_state("inactive", check=False)
+            self._reset_controller_target()
 
         # Unpause the (paused-on-boot) sim. The sim ignores SetPause until its ros2_control
         # plugin is fully up, so verify the response and retry rather than silently leaving
@@ -370,7 +528,7 @@ class MultipandaRosBackend(RobotBackend):
             self._unpause()
 
         self._gripper_closed = True  # force an open command even if our proxy is stale
-        self._set_gripper(-1.0, wait_result=True, force=True)
+        self.open_gripper_blocking()  # verify + retry: the real gripper drops some opens
         if self.move_to_start_on_reset:
             self._move_to_start()
 
@@ -388,35 +546,72 @@ class MultipandaRosBackend(RobotBackend):
             self._set_body_pose_verified("top_cube", [*top_xy, rest_z])
         self._home(activate_controller=True)
 
-    def _home(self, activate_controller: bool = False) -> None:
-        """Drive the arm to a consistent reachable start pose and let it settle.
+    def _home(self, activate_controller: bool = False) -> float:
+        """Drive the arm to a consistent reachable start pose and settle to a tolerance.
 
         The multipanda custom Cartesian controller sets its desired pose to the current EE
         pose in `on_activate()`. Cycling inactive->active is therefore the stack-native way
         to discard a stale equilibrium target. After activation, command home through the
         controller; do not use MuJoCo `/reset` for the arm in ROS 2, because the generic
         initial-joint loader is NYI and the ros2_control plugin reset is a no-op.
-        """
-        from mile_franka.config import DOWN_QUAT
 
+        Settling is convergence-based, not a fixed sleep: keep commanding home until the EE
+        is within `home_settle_tol` of it, or `home_settle_timeout_s` elapses. This adapts to
+        whatever gains are active -- a stiff (sim) controller exits in ~1s, a soft one uses
+        more of the budget -- instead of a magic hold time that under-settled the soft case
+        (the multipanda impedance controller takes ~6s to converge under SIM_STACKING_GAINS).
+        Returns the final home error (m) so callers can warn if it never converged.
+        """
         c = self.config
         home = np.array([0.45, 0.0, c.table_z + 0.33], dtype=np.float32)
         if activate_controller:
             self._activate_controller()
 
         start = self.get_ee_position()
-        for alpha in np.linspace(0.0, 1.0, self.home_steps):
+        # Capture the current EE orientation so we can ramp orientation too (get_ee_position
+        # above already forced a fresh cartesian_pos_curr read, populating _ee_curr_quat).
+        start_quat = (self._ee_curr_quat.copy() if self._ee_curr_quat is not None
+                      else np.asarray(self.down_quat, dtype=np.float32))
+        target_quat = np.asarray(self.down_quat, dtype=np.float32)
+        if float(np.dot(start_quat, target_quat)) < 0.0:
+            target_quat = -target_quat  # shortest-arc interpolation
+        # Ramp the equilibrium pose from the current EE to home in small position AND
+        # orientation increments for BOTH controllers, pacing each increment one tick apart
+        # so cartesian_pose_target_controller's smoothstep finishes (returns to v=0) before
+        # the next setpoint -> the commanded velocity stays continuous (same first principle
+        # as set_equilibrium_pose). Size the number of increments by whichever is larger:
+        # position hops <= setpoint_substep_m, or orientation hops <= ~5 deg.
+        dist = float(np.linalg.norm(home - start))
+        ang = 2.0 * float(np.arccos(min(1.0, abs(float(np.dot(start_quat, target_quat))))))
+        n = max(5,
+                int(np.ceil(dist / max(self.setpoint_substep_m, 1e-4))),
+                int(np.ceil(ang / np.radians(5.0))))
+        settle = max(0.03, self.env_step_period_s)  # must be >= controller target_duration_s
+        for i in range(1, n + 1):
+            alpha = float(i) / n
             target = (1.0 - alpha) * start + alpha * home
-            self._publish_pose(target, DOWN_QUAT)
+            quat = (1.0 - alpha) * start_quat + alpha * target_quat
+            quat = quat / (np.linalg.norm(quat) + 1e-9)
+            self._publish_pose(target, quat)
             self._rclpy.spin_once(self._node, timeout_sec=0.02)
+            time.sleep(settle)
+
+        deadline = time.time() + self.home_settle_timeout_s
+        err = float("inf")
+        while time.time() < deadline:
+            self._publish_pose(home, self.down_quat)
+            self._ee_curr_pose = None          # force a fresh read for the convergence check
+            self._spin_once_for_ee()
             time.sleep(0.03)
-        t = time.time()
-        while time.time() - t < self.home_settle_s:
-            self._publish_pose(home, DOWN_QUAT)
-            self._rclpy.spin_once(self._node, timeout_sec=0.02)
-            time.sleep(0.03)
-        self._ee_curr_pose = None
-        self._spin_once_for_ee()
+            if self._ee_curr_pose is not None:
+                err = float(np.linalg.norm(self._ee_curr_pose - home))
+                if err < self.home_settle_tol:
+                    break
+        if err >= self.home_settle_tol:
+            print(f"[MultipandaRosBackend] home did not settle within "
+                  f"{self.home_settle_timeout_s:.1f}s: error {err*100:.1f}cm "
+                  f"(tol {self.home_settle_tol*100:.1f}cm)")
+        return err
 
     def _set_body_pose(self, name: str, position) -> None:
         """position is base-frame; the service sets in world, so flip x,y back to world."""
@@ -436,7 +631,12 @@ class MultipandaRosBackend(RobotBackend):
         req.set_twist = False
         req.set_mass = False
         req.reset_qpos = False
-        self._call(self._set_body, req)
+        res = self._call(self._set_body, req)
+        if res is not None and not getattr(res, "success", True):
+            raise RuntimeError(
+                f"SetBodyState for {name!r} to world={world.tolist()} failed: "
+                f"{getattr(res, 'status_message', 'unknown error')}"
+            )
 
     def _set_body_pose_verified(self, name: str, position,
                                 tol: float = 0.015,
@@ -446,7 +646,7 @@ class MultipandaRosBackend(RobotBackend):
         last = None
         for _ in range(attempts):
             self._set_body_pose(name, target)
-            time.sleep(0.1)
+            time.sleep(0.2)
             last = self.get_body_pose(name)[:3]
             if float(np.linalg.norm(last - target)) < tol:
                 return
@@ -470,42 +670,107 @@ class MultipandaRosBackend(RobotBackend):
 
     def set_equilibrium_pose(self, position: np.ndarray, orientation: np.ndarray) -> None:
         target = np.asarray(position, dtype=np.float32)
+        deadline = time.time() + self.env_step_period_s
+
+        if self.controller_name == "cartesian_pose_target_controller":
+            # First principles: this controller turns each setpoint into a smoothstep that
+            # starts AND ends at zero velocity over target_duration_s (~one env tick). It is
+            # velocity-continuous ONLY if (a) exactly one setpoint arrives per tick and its
+            # ramp finishes before the next (no mid-ramp restart), and (b) each hop is small
+            # enough that the smoothstep's peak acceleration stays under the FR3 limit
+            # (a_peak ~= 5.78 * hop / target_duration^2). So publish ONE setpoint, clamped to
+            # setpoint_substep_m toward the target, and wait the full tick. If the target is
+            # farther (big policy action or a far home), the next ticks close the remaining
+            # gap. (The earlier "flood substeps within one tick" approach restarted the ramp
+            # repeatedly at non-zero velocity -> velocity/acceleration discontinuity reflex.)
+            start = self.get_ee_position()
+            delta = target - start
+            dist = float(np.linalg.norm(delta))
+            if dist > self.setpoint_substep_m:
+                target = start + delta * (self.setpoint_substep_m / dist)
+            self._ee_curr_pose = None  # invalidate so next get_ee_position() waits for fresh data
+            self._publish_pose(target, orientation)
+            while time.time() < deadline:
+                self._rclpy.spin_once(
+                    self._node, timeout_sec=min(0.01, deadline - time.time()))
+            return
 
         # Keep the policy/env contract at 10 Hz: one policy action maps to one Cartesian
         # target. The Cartesian controller tracks and holds that setpoint internally at its
         # own control frequency until the next policy tick.
         self._ee_curr_pose = None  # invalidate so next get_ee_position() waits for fresh data
-        deadline = time.time() + self.env_step_period_s
         self._publish_pose(target, orientation)
         while time.time() < deadline:
             self._rclpy.spin_once(self._node, timeout_sec=min(0.01, deadline - time.time()))
 
     def _set_gripper(self, command: float, wait_result: bool = False,
-                     force: bool = False) -> None:
+                     force: bool = False) -> Optional[bool]:
+        """Drive the gripper. Returns True/False (action reported success) when
+        ``wait_result`` is set, else None.
+
+        CLOSE uses the Grasp action (clamp inward with force to hold the cube). OPEN uses
+        the Move action — Grasp cannot open: it only clamps inward and reports success even
+        when it ends fully closed, so ``grasp(0.08)`` physically *closes* the real gripper
+        (observed: ``open -> success=True`` yet the fingers shut). Move positions the
+        fingers to a width with no grasp force and moves outward to open. Sim gripper nodes
+        without a Move server fall back to Grasp (sim honors the commanded width)."""
         want_closed = command > 0
         c = self.config
         if want_closed == self._gripper_closed and not force:
-            return  # no state change; don't spam the action server
+            return True  # no state change; already where we want to be
         self._gripper_closed = want_closed
         grasp_width = min(c.gripper_open_width, max(c.gripper_closed_width, 0.95 * c.cube_size))
         self._gripper_width = grasp_width if want_closed else c.gripper_open_width
-        if not self._grasp.wait_for_server(timeout_sec=2.0):
-            return
-        goal = self._Grasp.Goal()
-        goal.width = float(self._gripper_width)
-        goal.speed = 0.1
-        goal.force = 80.0   # increased from 40 N — cube was slipping under light grip
-        goal.epsilon.inner = 0.005
-        goal.epsilon.outer = 0.005
-        future = self._grasp.send_goal_async(goal)
+
+        if not want_closed and self._move is not None and \
+                self._move.wait_for_server(timeout_sec=2.0):
+            goal = self._Move.Goal()
+            goal.width = float(self._gripper_width)
+            goal.speed = 0.1
+            client, label = self._move, "open(move)"
+        else:
+            # Close, or open with no Move server (sim) -> Grasp. Wide epsilon so the grasp
+            # reports success across the cube-width range.
+            if not self._grasp.wait_for_server(timeout_sec=2.0):
+                return False
+            goal = self._Grasp.Goal()
+            goal.width = float(self._gripper_width)
+            goal.speed = 0.1
+            goal.force = 80.0   # increased from 40 N — cube was slipping under light grip
+            goal.epsilon.inner = 0.08
+            goal.epsilon.outer = 0.08
+            client = self._grasp
+            label = "close(grasp)" if want_closed else "open(grasp-fallback)"
+
+        future = client.send_goal_async(goal)
         self._rclpy.spin_until_future_complete(self._node, future, timeout_sec=2.0)
         if not wait_result or not future.done():
-            return
+            return None
         goal_handle = future.result()
         if goal_handle is None or not goal_handle.accepted:
-            return
+            print(f"[gripper] {label} REJECTED (width={goal.width:.3f})", flush=True)
+            return False
         result_future = goal_handle.get_result_async()
         self._rclpy.spin_until_future_complete(self._node, result_future, timeout_sec=4.0)
+        ok = False
+        if result_future.done() and result_future.result() is not None:
+            res = result_future.result().result
+            ok = bool(getattr(res, "success", True))
+        print(f"[gripper] {label} -> width={goal.width:.3f} success={ok}", flush=True)
+        return ok
+
+    def open_gripper_blocking(self, attempts: int = 3) -> bool:
+        """Open the gripper (Move action) and confirm it reported success, retrying if a
+        goal is dropped. Reset calls this so an episode always starts with an open gripper."""
+        for attempt in range(1, attempts + 1):
+            # force=True so it re-sends even though _gripper_closed is already False
+            if self._set_gripper(-1.0, wait_result=True, force=True):
+                return True
+            print(f"[gripper] reset open attempt {attempt}/{attempts} not confirmed; "
+                  "retrying", flush=True)
+            time.sleep(0.5)
+        print("[gripper] WARNING: could not confirm gripper open on reset", flush=True)
+        return False
 
     def set_gripper(self, command: float) -> None:
         # Wait for both close and open to complete — without waiting on close the EE
