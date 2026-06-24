@@ -353,7 +353,7 @@ def iterative_training(config):
         run.finish()
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description='Intervention training')
     parser.add_argument('--config', type=str, default='config.json', help='Path to the config file')
     args = parser.parse_args()
@@ -367,4 +367,8 @@ if __name__ == "__main__":
         iterative_training(config)
     else:
         raise ValueError('Invalid mode')
-    
+
+
+if __name__ == "__main__":
+    main()
+
