@@ -1,5 +1,5 @@
-# Single MILE-on-multipanda image: hucebot base + the pinned MILE training stack.
-# MetaWorld-free (the sim's MuJoCo is C++-only; no mujoco<3 Python binding needed).
+# Single MILE-on-multipanda image: hucebot base + the pinned MILE training stack + MetaWorld.
+# Python mujoco is 2.3.7 (MetaWorld-v2 native); the Franka sim uses mujoco_ros (C++).
 FROM hucebot:franka-humble
 USER root
 
@@ -31,8 +31,9 @@ RUN pip install --no-cache-dir -e .
 # setup scripts so they are on PYTHONPATH for this non-interactive RUN step.
 RUN bash -c "source /opt/ros/humble/setup.bash \
  && source /home/user/humble_ws/install/setup.bash \
- && python3 -c \"import rclpy, torch, stable_baselines3, imitation, gymnasium, mile, mile_franka; \
+ && python3 -c \"import rclpy, torch, stable_baselines3, imitation, gymnasium, metaworld, mile, mile_franka; \
 from mujoco_ros_msgs.srv import GetBodyState; \
-assert gymnasium.__version__=='0.29.1', gymnasium.__version__; print('deps OK')\""
+assert gymnasium.__version__=='0.29.1', gymnasium.__version__; \
+import mujoco; assert mujoco.__version__.startswith('2.3'), mujoco.__version__; print('deps OK')\""
 
 CMD ["sleep", "infinity"]
