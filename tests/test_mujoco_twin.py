@@ -2,7 +2,28 @@ import numpy as np
 import pytest
 
 from mile_franka.pose.base import Pose
-from mile_franka.viz.mujoco_twin import pose_to_freejoint_qpos
+from mile_franka.viz.mujoco_twin import (
+    base_pose_to_world_qpos, pose_to_freejoint_qpos)
+
+
+def test_base_pose_to_world_qpos_identity_base():
+    # When the robot base sits at the world origin with identity orientation,
+    # base-frame coords pass through unchanged.
+    pose = Pose(position=[0.44, -0.13, 0.04], orientation=[0.0, 0.0, 0.0, 1.0])
+    q = base_pose_to_world_qpos(pose, base_xpos=[0, 0, 0],
+                                base_xquat_wxyz=[1, 0, 0, 0])
+    np.testing.assert_allclose(q[:3], [0.44, -0.13, 0.04], atol=1e-6)
+
+
+def test_base_pose_to_world_qpos_applies_base_rotation():
+    # The franka MJCF places panda_link0 with quat (wxyz) [0,0,0,1] = 180 deg
+    # about Z, so the base frame is rotated 180 deg relative to world. A cube in
+    # front of the robot (base +x) must render in front of the rotated arm
+    # (world -x), with x and y both negated.
+    pose = Pose(position=[0.442, -0.129, 0.038], orientation=[0.0, 0.0, 0.0, 1.0])
+    q = base_pose_to_world_qpos(pose, base_xpos=[0, 0, 0],
+                                base_xquat_wxyz=[0, 0, 0, 1])
+    np.testing.assert_allclose(q[:3], [-0.442, 0.129, 0.038], atol=1e-6)
 
 
 def test_pose_to_freejoint_qpos_reorders_quat_to_wxyz():

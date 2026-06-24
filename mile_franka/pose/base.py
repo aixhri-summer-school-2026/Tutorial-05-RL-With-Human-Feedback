@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Optional, Sequence
 
 import numpy as np
 
@@ -30,3 +30,20 @@ class ObjectPoseSource(ABC):
     @abstractmethod
     def get_pose(self, name: str) -> Pose:
         """Return the latest Pose for the object identified by `name`."""
+
+    def pose_age(self, name: str) -> Optional[float]:
+        """Seconds since the pose for `name` was last actually observed.
+
+        Sources with no notion of staleness (sim ground truth, fake backend)
+        always return 0.0 — their pose is exact every step. Real perception
+        sources override this to report the true age of the last detection.
+        """
+        return 0.0
+
+    def is_stale(self, name: str) -> bool:
+        """Whether the pose for `name` is older than the source's freshness bound.
+
+        Default False (sources without staleness are never stale). Real sources
+        override this against their own max_age.
+        """
+        return False

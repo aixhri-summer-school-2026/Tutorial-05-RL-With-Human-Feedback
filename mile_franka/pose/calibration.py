@@ -114,6 +114,10 @@ class CalibSample:
     board_pose: np.ndarray    # 4×4  camera→board (board in camera optical frame)
 
 
+# cv2.solvePnP's default DLT init requires at least 6 3D-2D correspondences.
+_MIN_PNP_POINTS = 6
+
+
 def detect_charuco_pose(board: ChArUcoBoard, image: np.ndarray,
                         camera_matrix: np.ndarray,
                         dist_coeffs: Optional[np.ndarray] = None) -> Optional[np.ndarray]:
@@ -128,16 +132,24 @@ def detect_charuco_pose(board: ChArUcoBoard, image: np.ndarray,
         dist_coeffs = np.zeros(5, dtype=np.float32)
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    corners, ids, _ = cv2.aruco.detectMarkers(gray, board._dictionary)
-    if ids is None or len(ids) < 4:
+    # OpenCV >= 4.7 overhauled the aruco API: the free functions detectMarkers /
+    # interpolateCornersCharuco / estimatePoseCharucoBoard are gone, replaced by the
+    # CharucoDetector class + matchImagePoints/solvePnP for the board pose.
+    detector = cv2.aruco.CharucoDetector(board._board)
+    charuco_corners, charuco_ids, _marker_corners, _marker_ids = detector.detectBoard(gray)
+    if charuco_ids is None or len(charuco_ids) < _MIN_PNP_POINTS:
         return None
-    _, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(
-        corners, ids, gray, board._board)
-    if charuco_ids is None or len(charuco_ids) < 4:
+    # Board-frame object points <-> detected image points, then PnP for camera->board.
+    obj_points, img_points = board._board.matchImagePoints(charuco_corners, charuco_ids)
+    # solvePnP's default DLT needs >= 6 point correspondences; a marginal view with fewer
+    # would raise mid-detection (and kill the caller's render thread). Require the floor and
+    # guard the solve so a bad frame degrades to "no detection" rather than crashing.
+    if obj_points is None or len(obj_points) < _MIN_PNP_POINTS:
         return None
-    valid, rvec, tvec = cv2.aruco.estimatePoseCharucoBoard(
-        charuco_corners, charuco_ids, board._board,
-        camera_matrix, dist_coeffs, None, None)
+    try:
+        valid, rvec, tvec = cv2.solvePnP(obj_points, img_points, camera_matrix, dist_coeffs)
+    except cv2.error:
+        return None
     if not valid:
         return None
     R, _ = cv2.Rodrigues(rvec)
