@@ -20,25 +20,13 @@ commands small (≤5.5 cm) delta actions.
     python3 scripts/eval_base_policy_real.py --policy trained_models/franka/policy --episodes 5
 """
 import argparse
-import functools
 import sys
 import time
 
 import numpy as np
-import torch as th
-from stable_baselines3.common.policies import ActorCriticPolicy
 
 from mile_franka.envs.registration import register_franka_envs, make_franka_env
-
-
-def _load_policy(path: str) -> ActorCriticPolicy:
-    """Load an SB3 policy. See eval_base_policy_sim.py for the weights_only rationale."""
-    orig_load = th.load
-    th.load = functools.partial(orig_load, weights_only=False)
-    try:
-        return ActorCriticPolicy.load(path)
-    finally:
-        th.load = orig_load
+from mile_franka.policies.bc import load_actor_critic_policy
 
 
 def _confirm(prompt: str) -> None:
@@ -65,7 +53,7 @@ def main() -> None:
     register_franka_envs()
     import gymnasium as gym
     env = make_franka_env(gym.make(args.env_name))
-    policy = _load_policy(args.policy)
+    policy = load_actor_critic_policy(args.policy)
     policy.eval()
 
     print(f"Policy   : {args.policy}")

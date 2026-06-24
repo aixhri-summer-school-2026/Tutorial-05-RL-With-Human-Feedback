@@ -124,22 +124,11 @@ def _build_real_env(config: Optional[StackTaskConfig] = None,
     grasp_action = os.environ.get(
         "MILE_GRASP_ACTION",
         "/franka_gripper/grasp" if use_fr3_pose else "/franka_gripper_node/grasp")
-    # Error-recovery action: after a reflex the FR3 keeps its command interfaces
-    # unavailable until a franka_msgs/ErrorRecovery goal is sent. Name differs by stack;
-    # override with MILE_ERROR_RECOVERY_ACTION. CONFIRM@bringup against `ros2 action list`.
+    # Action name differs by stack; override with MILE_ERROR_RECOVERY_ACTION.
     error_recovery_action = os.environ.get(
         "MILE_ERROR_RECOVERY_ACTION",
         "/franka_control/error_recovery" if use_fr3_pose else "/error_recovery")
-    # Controller name. RESOLVED 2026-06-20: the custom_cartesian_impedance_controller now
-    # drives the FR3 correctly after the joint-space damping fix (nullspace term restoration +
-    # joint_damp_q1_to_4=8 / joint_damp_q5_to_7=4). The earlier "arm holds, never moves" was
-    # the undamped wrist self-oscillating into a reflex. The cartesian_pose_target_controller
-    # (FrankaCartesianPoseInterface) is retained as an override for debugging, but its
-    # libfranka Cartesian motion generator throws
-    # cartesian_motion_generator_joint_velocity_discontinuity near the wrist-down singularity
-    # (joint5 ≈ 0 with FR3_DOWN_QUAT=[1,0,0,0]), so it is no longer the default. Both
-    # controllers share /cartesian_impedance/{equilibrium_pose,cartesian_pos_curr} topics.
-    # MILE_CONTROLLER overrides either default.
+    # MILE_CONTROLLER overrides the default. See docs/bringup-reference.md.
     controller_name = os.environ.get(
         "MILE_CONTROLLER",
         "custom_cartesian_impedance_controller")

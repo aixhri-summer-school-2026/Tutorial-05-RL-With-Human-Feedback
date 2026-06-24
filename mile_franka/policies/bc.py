@@ -7,6 +7,8 @@ policy MILE requires.
 """
 from __future__ import annotations
 
+import functools
+
 import gymnasium as gym
 import numpy as np
 import torch
@@ -16,6 +18,21 @@ from imitation.policies.base import NormalizeFeaturesExtractor
 from imitation.util.networks import RunningNorm
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.utils import get_schedule_fn
+
+
+def load_actor_critic_policy(path: str) -> ActorCriticPolicy:
+    """Load an SB3 ActorCriticPolicy saved by train_bc.
+
+    Forces weights_only=False to unpickle gymnasium Box stored in SB3 checkpoints
+    (PyTorch>=2.6 changed the default; SB3 2.3.x does not expose the argument).
+    """
+    import torch as th
+    orig_load = th.load
+    th.load = functools.partial(orig_load, weights_only=False)
+    try:
+        return ActorCriticPolicy.load(path)
+    finally:
+        th.load = orig_load
 
 
 def build_actor_critic_policy(observation_space: gym.spaces.Space,

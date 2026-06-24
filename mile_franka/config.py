@@ -4,44 +4,13 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-# Fixed down-facing wrist orientations as quaternions (qx, qy, qz, qw).
-# Both stacks command the EE "straight down" as a 180-deg rotation about base +X
-# (xyzw = [1,0,0,0]); the publish path maps the array straight onto
-# geometry_msgs/Quaternion (x,y,z,w). VERIFIED on the live FR3 2026-06-19 via
-# tf2_echo fr3_link0->fr3_hand_tcp: [1,0,0,0] -> RPY[180,0,0] (fingers axis-aligned).
-# The previous FR3 value [0.9239,-0.3827,0,0] was a mis-derived "correction" that
-# actually yawed the gripper -45 deg (RPY[180,0,-45]). If the lab needs a deliberate
-# grasp yaw, set xyzw for RPY[180,0,+/-yaw] (e.g. +45 -> [0.9239,0.3827,0,0]).
+# EE pointing straight down: xyzw = [1,0,0,0] = RPY[180°, 0, 0]. See docs/bringup-reference.md.
 MULTIPANDA_DOWN_QUAT: np.ndarray = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
-# RESOLVED 2026-06-20: clean axis-aligned down. The old value [0.9239,-0.3827,0,0]
-# (RPY[180,0,-45]) yawed the gripper -45deg at home -- the longstanding "gripper off by 45deg"
-# bug. The historical worry was that commanding [1,0,0,0] near the home pose lands joint5~=0
-# (near-singular wrist) and a CartesianPose motion generator would throw
-# cartesian_motion_generator_joint_velocity_discontinuity. That worry is specific to the
-# CartesianPose controller; the soft Cartesian-IMPEDANCE controller (Effort/torque, the path
-# we use) has no motion generator. VERIFIED on hardware: from the -46.5deg as-homed yaw,
-# commanding [1,0,0,0] rotated the wrist to -3.4deg yaw with 0.22cm position drift and NO
-# reflex (scripts/impedance_orient_test.py). The ~3deg residual is rotational steady-state lag
-# under rot_stiff=25; raise rot_stiff or allow more settle to tighten it.
 FR3_DOWN_QUAT: np.ndarray = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
 DOWN_QUAT: np.ndarray = MULTIPANDA_DOWN_QUAT
 
-# Known wrist-down "neutral retract" joint configuration (panda_joint1..7, radians).
-# The soft Cartesian-impedance controller cannot reliably *achieve* a straight-down wrist
-# from an arbitrary start (rotational stiffness is weak and the 10 Hz moving target never
-# lets orientation settle), so on the REAL robot we first drive the arm to this fixed joint
-# config, THEN activate the Cartesian controller (which captures the now-down EE as its
-# equilibrium); afterwards the policy/scripted loop only commands small position deltas with
-# DOWN_QUAT held.
-#
-# This value is the hucebot `MoveToStartExampleController` q_goal (hardcoded in
-# franka_example_controllers/src/comless/move_to_start_example_controller.cpp). That controller
-# is defined ONLY in the real config (franka_bringup/config/real/single_controllers.yaml), so
-# on real we reach this config by activating move_to_start (it ignores external goals — this
-# constant just documents/mirrors where the arm lands and seeds any custom joint move). The
-# multipanda SIM config has no move_to_start controller, so sim homes via the Cartesian path
-# instead (see envs/registration.py). CONFIRM@bringup: that this q_goal is genuinely wrist-down
-# and clears the workspace on the real Franka; refine via IK at the home TCP point if not.
+# Neutral wrist-down joint config (panda_joint1..7, rad). Mirrors hucebot MoveToStartExampleController.
+# Real backend reaches this via move_to_start; sim homes via Cartesian ramp. See docs/bringup-reference.md.
 Q_HOME: np.ndarray = np.array(
     [-0.008, -0.005, 0.011, -1.563, 0.005, 1.603, 0.850], dtype=np.float32)
 

@@ -17,3 +17,16 @@ trained_models/
 trained_models.zip
 MUJOCO_LOG.TXT
 config/camera_calib.yaml
+
+# Dev-only / bringup debugging scripts (local use only, not part of tutorial)
+scripts/impedance_nudge.py
+scripts/impedance_orient_test.py
+scripts/impedance_telemetry.py
+scripts/joystick_identify.py
+scripts/topic_diag.py
+scripts/tune_intervention_cost.py
+scripts/franka_real_home_smoke.py
+
+# Dev planning docs (notes and plans; specs stay tracked for CLAUDE.md reference)
+docs/superpowers/notes/
+docs/superpowers/plans/

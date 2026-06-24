@@ -1,14 +1,8 @@
 """AprilTag object poses from apriltag_ros via tf2.
 
-apriltag_ros publishes a tf frame per detected tag; with a static transform from the robot
-base to the camera optical frame (from the calibration YAML), tf2 yields base→tag directly.
-The tag sits on a cube FACE, so the cube center is half the cube edge away from the face
-along its normal. cube_center_pose() applies that offset along the tag's -z axis (i.e. into
-the tag, toward the cube center) and is pure so the geometry is unit-tested with no ROS.
-
-The AprilTag convention (apriltag C library / apriltag_ros) has the tag's +z pointing OUT
-of the tag surface toward the camera. The cube center is BEHIND the tag face, so the offset
-is along -z. Verified in the MuJoCo twin viewer 2026-06-20.
+apriltag_ros publishes a tf frame per detected tag; with the calibration extrinsics,
+tf2 yields base→tag directly. cube_center_pose() offsets along tag −z (into the face,
+toward the cube center; apriltag +z points out toward the camera).
 """
 from __future__ import annotations
 

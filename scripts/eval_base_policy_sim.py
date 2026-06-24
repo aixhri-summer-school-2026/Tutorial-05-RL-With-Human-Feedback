@@ -5,67 +5,15 @@ Operator-initiated sim measurement to confirm the base policy is mediocre (spec 
 Requires a live sim (`make sim-up` or `make sim-gui`).
 """
 import argparse
-import functools
 import os
-import subprocess
 import time
 
 import gymnasium as gym
 import numpy as np
-import torch as th
-from stable_baselines3.common.policies import ActorCriticPolicy
 
 from mile_franka.envs.registration import register_franka_envs, make_franka_env
-
-
-def start_recorder(out_path, display, size, fps, crop=None):
-    """ffmpeg x11grab recorder for the headless Xvfb display (mirrors franka_sim_rollout_record)."""
-    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-    cmd = ["ffmpeg", "-y", "-f", "x11grab", "-video_size", size,
-           "-framerate", str(fps), "-i", display]
-    if crop:
-        cmd += ["-vf", crop]
-    cmd += ["-pix_fmt", "yuv420p", out_path]
-    return subprocess.Popen(cmd, stdin=subprocess.PIPE,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
-def stop_recorder(proc):
-    try:
-        proc.communicate(input=b"q", timeout=10)
-    except Exception:
-        proc.terminate()
-        proc.wait(timeout=10)
-
-
-def _detect_crop(display, size, fps):
-    """Capture a few seconds, run cropdetect, return crop=W:H:X:Y or None."""
-    import re
-    import tempfile
-    cmd = ["ffmpeg", "-y", "-f", "x11grab", "-video_size", size,
-           "-framerate", str(fps), "-i", display,
-           "-t", "2", "-vf", "cropdetect",
-           "-pix_fmt", "yuv420p", "-f", "null", "/dev/null"]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-    matches = re.findall(r"crop=(\d+:\d+:\d+:\d+)", proc.stderr)
-    if matches:
-        return f"crop={matches[-1]}"
-    return None
-
-
-def _load_policy(path: str) -> ActorCriticPolicy:
-    """Load an SB3 policy saved by build_base_policy.
-
-    PyTorch>=2.6 flipped torch.load's `weights_only` default to True and refuses to unpickle
-    the gymnasium Box stored in the SB3 checkpoint. SB3 2.3.x's load() doesn't expose the arg,
-    so force weights_only=False for this call -- we created the checkpoint, so it's trusted.
-    """
-    orig_load = th.load
-    th.load = functools.partial(orig_load, weights_only=False)
-    try:
-        return ActorCriticPolicy.load(path)
-    finally:
-        th.load = orig_load
+from mile_franka.policies.bc import load_actor_critic_policy
+from video_utils import start_recorder, stop_recorder, detect_crop as _detect_crop
 
 
 def main() -> None:
@@ -86,7 +34,7 @@ def main() -> None:
 
     register_franka_envs()
     env = make_franka_env(gym.make(args.env_name))
-    policy = _load_policy(args.policy)
+    policy = load_actor_critic_policy(args.policy)
     policy.eval()
 
     successes, steps_used = [], []

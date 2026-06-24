@@ -1,24 +1,9 @@
 """RobotBackend backed by hucebot's multipanda_ros2 MuJoCo sim (or real hardware).
 
-Verified against the running `hucebot:franka-humble` sim on 2026-06-16 (see the
-franka-sim-verified-bringup note). Design notes:
-
-- EE position is read from the controller's /cartesian_impedance/cartesian_pos_curr topic,
-  which reports O_T_EE in the panda_link0 (base) frame -- the same frame the
-  equilibrium_pose commands use. This is essential: get_body_state("panda_hand") returns
-  the hand link which is ~0.103 m above the controller's EE frame, which would cause the
-  scripted policy to command the arm underground before triggering GRASP.
-- Cube poses (EE + cubes) are read from the mujoco_ros `get_body_state` SERVICE for cubes.
-  The FrankaState broadcaster is not spawned by franka_sim_cartesian_impedance.launch.py.
-  Cube poses are in the sim `world` frame, which coincides with `panda_link0` for the
-  single arm modulo a 180-deg rotation about z (verified: link0 quat xyzw = [0,0,1,0]).
-- The node is driven synchronously (call_async + spin_until_future_complete). We do NOT run
-  a background spin thread, to avoid deadlocking service calls against a concurrent spinner.
-- Gripper width is tracked from the last command (proxy); good enough for the obs and for
-  the "released" success check. The Grasp goal is fired only when the open/closed state
-  flips, and we wait only for goal acceptance (not completion) to keep step() ~10 Hz.
-
+EE position comes from /cartesian_impedance/cartesian_pos_curr (O_T_EE, panda_link0 frame).
+Sim cube poses come from mujoco_ros get_body_state (world frame, flip ±xy into base).
 All ROS imports are lazy so the package imports with no ROS installed.
+See docs/bringup-reference.md for topic names, FR3 quirks, and iceoryx workaround notes.
 """
 from __future__ import annotations
 
@@ -33,10 +18,6 @@ import numpy as np
 from mile_franka.config import DOWN_QUAT, StackTaskConfig
 from mile_franka.envs.backend import RobotBackend
 
-# Confirmed live names (hucebot:franka-humble, franka_sim_cartesian_impedance.launch.py).
-# VERIFIED in multipanda_ros2 (franka_example_controllers custom_cartesian_impedance_controller
-# + franka_bringup config/{sim,real}): the controller name and these two topics are IDENTICAL in
-# the sim and real configs, so they are shared across both backends.
 EQUILIBRIUM_TOPIC = "/cartesian_impedance/equilibrium_pose"  # PoseStamped command (sim==real)
 EE_CURR_TOPIC = "/cartesian_impedance/cartesian_pos_curr"  # O_T_EE PoseStamped, panda_link0 (sim==real)
 CONTROLLER_NAME = "custom_cartesian_impedance_controller"  # sim==real
@@ -130,13 +111,7 @@ class MultipandaRosBackend(RobotBackend):
         self._controller_activated_by_backend = False
 
         if not rclpy.ok():
-            # Do NOT let rclpy install its default SIGINT handler: that handler shuts down
-            # the context on Ctrl-C, which invalidates the node mid-eval. The operator
-            # Ctrl-Cs to end an episode (caught by the eval/collect loop), so with the
-            # default handler the *next* episode's reset() dies on the first ROS call with
-            # "rcl node's context is invalid". With NO, Ctrl-C raises an ordinary
-            # KeyboardInterrupt the script already handles, and the context survives across
-            # episodes.
+            # Ctrl-C raises KeyboardInterrupt rather than tearing down the rclpy context between episodes.
             from rclpy.signals import SignalHandlerOptions
             rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
         self._rclpy = rclpy
@@ -146,10 +121,6 @@ class MultipandaRosBackend(RobotBackend):
         self._Move = _Move
 
         self._pub = self._node.create_publisher(PoseStamped, EQUILIBRIUM_TOPIC, 10)
-        # Real franka_gripper grasp action is "franka_gripper_node/grasp" (verified in
-        # multipanda_ros2 franka_gripper/src/gripper_action_server.cpp: node "franka_gripper_node",
-        # server "~/grasp"); sim default below is the multipanda sim gripper node. Same
-        # franka_msgs/action/Grasp message type. CONFIRM@bringup: the real gripper namespace.
         self._grasp = ActionClient(self._node, Grasp, grasp_action)
         # Move action shares the gripper namespace ("…/grasp" -> "…/move"). Used to OPEN.
         move_action = grasp_action.rsplit("/grasp", 1)[0] + "/move"
@@ -224,12 +195,8 @@ class MultipandaRosBackend(RobotBackend):
 
     def _run_ros2(self, args: list[str], *, timeout: float = 10.0,
                   check: bool = True, no_iceoryx: bool = False) -> subprocess.CompletedProcess:
-        # The sim's CycloneDDS iceoryx shared-memory transport degrades/breaks ros2 CLI calls:
-        # node-graph discovery fails (`ros2 node list` empty -> `ros2 param` "Node not found")
-        # and control service calls (switch_controller) time out through the daemon — while the
-        # sim/backend DATA path still needs iceoryx for large AprilTag images. So disable shared
-        # memory for these tiny control-plane CLI subprocesses in sim only. The real path is
-        # untouched (its franka_ros2 stack has no iceoryx discovery issue), keeping eval-real working.
+        # Disable iceoryx shared-memory for CLI subprocesses in sim; it breaks node discovery.
+        # See docs/bringup-reference.md for details.
         env = None
         if no_iceoryx or self.sim:
             env = {**os.environ, "CYCLONEDDS_URI": ""}
@@ -262,10 +229,7 @@ class MultipandaRosBackend(RobotBackend):
 
     def _run_param(self, verb: str, rest: list[str], *, timeout: float = 20.0,
                    check: bool = False) -> subprocess.CompletedProcess:
-        """Run `ros2 param <verb> ...`. In sim, route around the iceoryx node-discovery break:
-        use --no-daemon (direct discovery, bypassing the iceoryx-poisoned CLI daemon) and disable
-        shared memory, so the controller node resolves. The real path keeps the default daemon
-        (its franka_ros2 stack has no iceoryx discovery issue)."""
+        """Run `ros2 param <verb> ...`. In sim, bypass the iceoryx-poisoned CLI daemon."""
         flags = ["--no-daemon", "--spin-time", "5"] if self.sim else []
         return self._run_ros2(["param", verb, *flags, *rest],
                               timeout=timeout, check=check, no_iceoryx=self.sim)
@@ -386,21 +350,10 @@ class MultipandaRosBackend(RobotBackend):
         self._controller_activated_by_backend = True
 
     def _reset_controller_target(self) -> None:
-        """Discard a stale equilibrium target before re-homing, WITHOUT cycling the controller.
+        """Discard a stale equilibrium target before re-homing.
 
-        The Cartesian controller captures its desired pose when it activates, so the
-        stack-native way to drop a stale target is to cycle inactive->active. But on the real
-        FR3 a deactivate->reactivate of the Effort controller trips
-        communication_constraints_violation: the mode-switch transient aborts the libfranka
-        control loop ("Cannot perform this operation while another control or read operation
-        is running"), which kills control mid-reset -- the arm then homes trivially (already
-        there) but never moves again. So:
-          - controller INACTIVE: do nothing; the upcoming activation captures the current
-            pose as the desired anyway.
-          - controller ACTIVE, real: re-seed the equilibrium target to the CURRENT pose by
-            publishing it (no mode switch) -- same "discard stale target" effect, no reflex.
-          - controller ACTIVE, sim: keep the simple inactive->active cycle (no FR3 firmware,
-            the mode-switch hazard does not exist).
+        Real: re-publish current EE pose (no mode switch — avoids libfranka reflex on Effort controller).
+        Sim: cycle inactive→active (clean, no firmware constraint). See docs/bringup-reference.md.
         """
         import rclpy as _rclpy
         if not _rclpy.ok():
@@ -673,16 +626,8 @@ class MultipandaRosBackend(RobotBackend):
         deadline = time.time() + self.env_step_period_s
 
         if self.controller_name == "cartesian_pose_target_controller":
-            # First principles: this controller turns each setpoint into a smoothstep that
-            # starts AND ends at zero velocity over target_duration_s (~one env tick). It is
-            # velocity-continuous ONLY if (a) exactly one setpoint arrives per tick and its
-            # ramp finishes before the next (no mid-ramp restart), and (b) each hop is small
-            # enough that the smoothstep's peak acceleration stays under the FR3 limit
-            # (a_peak ~= 5.78 * hop / target_duration^2). So publish ONE setpoint, clamped to
-            # setpoint_substep_m toward the target, and wait the full tick. If the target is
-            # farther (big policy action or a far home), the next ticks close the remaining
-            # gap. (The earlier "flood substeps within one tick" approach restarted the ramp
-            # repeatedly at non-zero velocity -> velocity/acceleration discontinuity reflex.)
+            # Smoothstep controller: one small setpoint per tick keeps velocity continuous.
+            # See docs/bringup-reference.md for the substep-clamping rationale.
             start = self.get_ee_position()
             delta = target - start
             dist = float(np.linalg.norm(delta))

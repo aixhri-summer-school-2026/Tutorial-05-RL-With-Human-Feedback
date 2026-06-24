@@ -13,8 +13,6 @@ Example (in container):
         --data output_dir/franka/sim_demos.npz
 """
 import argparse
-import os
-import subprocess
 import time
 
 import gymnasium as gym
@@ -24,41 +22,7 @@ from gymnasium.wrappers import FlattenObservation, FrameStack
 from mile_franka.envs.registration import (
     FRANKA_FRAME_STACK, SIM_ENV_ID, register_franka_envs)
 from mile_franka.policies.scripted import ScriptedStackPolicy
-
-
-def _detect_crop(display, size, fps):
-    """Capture a few seconds from *display*, run cropdetect, return crop=W:H:X:Y or None."""
-    import re
-    import tempfile
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as tmp:
-        cmd = ["ffmpeg", "-y", "-f", "x11grab", "-video_size", size,
-               "-framerate", str(fps), "-i", display,
-               "-t", "2", "-vf", "cropdetect",
-               "-pix_fmt", "yuv420p", "-f", "null", "/dev/null"]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-        matches = re.findall(r"crop=(\d+:\d+:\d+:\d+)", proc.stderr)
-        if matches:
-            return f"crop={matches[-1]}"  # last detection is the settled one
-    return None
-
-
-def start_recorder(out_path, display, size, fps, crop=None):
-    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-    cmd = ["ffmpeg", "-y", "-f", "x11grab", "-video_size", size,
-           "-framerate", str(fps), "-i", display]
-    if crop:
-        cmd += ["-vf", crop]
-    cmd += ["-pix_fmt", "yuv420p", out_path]
-    return subprocess.Popen(cmd, stdin=subprocess.PIPE,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
-def stop_recorder(proc):
-    try:
-        proc.communicate(input=b"q", timeout=10)
-    except Exception:
-        proc.terminate()
-        proc.wait(timeout=10)
+from video_utils import start_recorder, stop_recorder, detect_crop as _detect_crop
 
 
 def current_state(env):

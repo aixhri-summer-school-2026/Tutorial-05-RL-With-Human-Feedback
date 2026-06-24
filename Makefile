@@ -1,29 +1,16 @@
-# MILE-on-multipanda dev verbs. One short command per action; all run inside the `sim`
-# compose service with the verified headless env sourced. See docs/superpowers/specs/
-# 2026-06-16-mile-docker-image-and-sim-demos-design.md.
 DC      := docker compose -f docker/docker-compose.yml
 ENVSH   := source scripts/in_container_env.sh
 RUN      = $(DC) exec sim bash -lc '$(ENVSH) && $(1)'
 RUND     = $(DC) exec -d sim bash -lc '$(ENVSH) && $(1)'
-# Kill any leftover MILE *client* still commanding the arm (a prior sim rollout, eval, or MILE
-# run that may still publish /cartesian_impedance/equilibrium_pose and fight a real run, or
-# leave a stale rclpy context). Excludes self. Deliberately does NOT touch the sim/controller
-# launch (franka_sim_stacking) or apriltag-up (camera) -- the real backend needs both running.
+# Kill any leftover process still publishing to the arm (prior run or stale rclpy context).
 KILLCLIENTS = self=$$$$; pgrep -f "train_mile.py|eval_base_policy_(sim|real)|eval_mile|franka_sim_rollout_record|build_base_policy|collect_synthetic_interventions" | grep -vx $$self | xargs -r kill 2>/dev/null; sleep 2; true
 TS      := $(shell date -u +%Y%m%dT%H%M%S)
 DEMOS   ?= output_dir/franka/sim_demos_mediocre.npz   ## base-policy input; override: make base-policy DEMOS=path.npz
-# Gripper verbs. Both open and close go through the franka_msgs/action/Grasp action (same as
-# the env's RobotBackend._set_gripper): a wide-epsilon grasp drives the fingers to a target
-# width regardless of what is between them, so it works on the multipanda sim gripper and the
-# real franka_gripper alike. GRIP_FORCE/CLOSE_WIDTH/OPEN_WIDTH are overridable on the CLI.
 GRIP_FORCE  ?= 40
 CLOSE_WIDTH ?= 0.0
 OPEN_WIDTH  ?= 0.08
-# Resolve whichever gripper grasp action is actually live (real franka_gripper_node vs the
-# multipanda sim node) and bail with a clear message if no controller/sim is up.
+# Resolve which gripper action is live and bail if none found.
 GRIP_NS = ns=$$(ros2 action list 2>/dev/null | grep -E "/grasp$$" | head -1 | sed "s|/grasp||"); if [ -z "$$ns" ]; then echo "No gripper action server found -- is the controller/sim running?"; exit 1; fi; echo "gripper: $$ns"
-# Real FR3 bringup via the separate franka_ros2 stack (its own container `franka_ros2_humble`).
-# Runs on CycloneDDS so the mile container's eval-real/pose/gripper clients can reach it.
 FRANKA_CTR    ?= franka_ros2_humble
 ROBOT_IP      ?= 169.254.202.10
 LOAD_GRIPPER  ?= true
