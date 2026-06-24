@@ -60,13 +60,12 @@ def generate_launch_description():
              parameters=[{"source_list": ["/joint_state_broadcaster/joint_states",
                                           "/panda_gripper_sim_node/joint_states"],
                           "rate": 30}]),
-        # Broadcaster active; recovery/cartesian controllers loaded but INACTIVE.
-        Node(package="controller_manager", executable="spawner",
-             arguments=["joint_state_broadcaster"], output="screen"),
-        Node(package="controller_manager", executable="spawner",
-             arguments=["move_to_start_example_controller", "--inactive"],
-             output="screen"),
-        Node(package="controller_manager", executable="spawner",
-             arguments=["custom_cartesian_impedance_controller", "--inactive"],
-             output="screen"),
+        # Controller loading is handled by MultipandaRosBackend._wait_for_controller_node()
+        # (mile_franka/envs/ros_backend.py). The launch-time spawners reliably lose the race
+        # against controller_manager warm-up (~20 s on cold boot before service callbacks are
+        # processed) and die with exit code 1, taking the whole launch down.
+        # _wait_for_controller_node polls controller_manager with up to a 60 s deadline,
+        # then self-heals any missing controller (joint_state_broadcaster → active,
+        # custom_cartesian_impedance_controller → inactive, move_to_start_example_controller
+        # → inactive), so the sim launches fast and the Python client handles the warm-up.
     ])
