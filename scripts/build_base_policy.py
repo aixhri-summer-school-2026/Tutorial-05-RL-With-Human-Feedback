@@ -99,8 +99,8 @@ def main():
     ap.add_argument("--env_id", default=SIM_ENV_ID)
     ap.add_argument("--demos", default=None,
                     help="path to a sim-demo .npz; skips scripted collection when set")
-    ap.add_argument("--demo_episodes", type=int, default=60)
-    ap.add_argument("--bc_epochs", type=int, default=100)
+    ap.add_argument("--demo_episodes", type=int, default=100)
+    ap.add_argument("--bc_epochs", type=int, default=500)
     ap.add_argument("--bc_batch_size", type=int, default=256)
     ap.add_argument("--bc_lr", type=float, default=1e-3)
     ap.add_argument("--bc_ent_weight", type=float, default=0.0)
