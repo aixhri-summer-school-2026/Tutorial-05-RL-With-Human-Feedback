@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- CycloneDDS iceoryx shared-memory transport (requires iox-roudi — started by
+     docker-compose at boot and guarded in in_container_env.sh).
+     Fixes the apriltag_ros image_transport BEST_EFFORT / large-message UDP
+     fragment-drop issue at 1080p by keeping intra-container traffic off the
+     physical NIC's lossy UDP path.  Also reduces DDS overhead for fixed-size
+     types (JointState, CameraInfo, detections).
+     Applied globally via docker-compose + in_container_env.sh. -->
+<CycloneDDS xmlns="https://cdds.io/config"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://cdds.io/config
+    https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/iceoryx/etc/cyclonedds.xsd">
+  <Domain id="any">
+    <SharedMemory>
+      <Enable>true</Enable>
+    </SharedMemory>
+  </Domain>
+</CycloneDDS>

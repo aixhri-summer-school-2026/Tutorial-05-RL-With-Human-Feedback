@@ -12,6 +12,8 @@ services:
                                            # without an init, PID 1 (sleep infinity) leaves zombies
                                            # and their stale DDS participants linger on the graph.
     network_mode: host
+    # Keep off CPUs 0–3 which are reserved for the franka_ros2 RT control loop.
+    cpuset: "0-15"
     working_dir: /home/user/mile-code
     environment:
       - DISPLAY=:99                        # internal Xvfb (headless default). sim-gui overrides
@@ -21,31 +23,15 @@ services:
       - LIBGL_ALWAYS_SOFTWARE=1            # overridden per-exec by sim-gui for HW GL
       - GALLIUM_DRIVER=llvmpipe
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///home/user/mile-code/config/cyclonedds.xml
       - NVIDIA_DRIVER_CAPABILITIES=all
     volumes:
       - ..:/home/user/mile-code            # live host edits in dev
       - /tmp/.X11-unix:/tmp/.X11-unix      # host X socket for sim-gui live window
-      - /dev/bus/usb:/dev/bus/usb          # Intel RealSense (serial 217222067236) libusb enumeration
-    devices:
-      - /dev/hidraw0:/dev/hidraw0          # SpaceMouse (3Dconnexion) — verify node with: lsusb | grep -i 3dconnex; ls -l /dev/hidraw*
-      # Gamepad nodes — comment out if the controller is unplugged (compose hard-requires every
-      # listed device, so an absent node blocks container start). Verify: ls -l /dev/input/js*
-      - /dev/input/js0:/dev/input/js0          # gamepad (Xbox 360 pad)
-      - /dev/input/event20:/dev/input/event20  # Xbox 360 controller SDL evdev node
-      # Intel RealSense D415 UVC video nodes (third-person eye-to-hand camera).
-      # The sparse set is normal — the D415 exposes color, depth, and IR metadata
-      # nodes; exact minor numbers depend on udev enumeration order and change after
-      # USB reset / replug. video0/video1 are a ZED 2i (unrelated); skip those.
-      # device_cgroup_rules 'c 81:* rmw' gives the container access to any new minor
-      # without a restart, but listed devices must exist at compose-up time.
-      - /dev/video2:/dev/video2
-      - /dev/video4:/dev/video4
-      - /dev/video5:/dev/video5
-      - /dev/video6:/dev/video6
-      - /dev/video7:/dev/video7
-      - /dev/video9:/dev/video9
+      - /dev:/dev                          # all host devices (D415, gamepad, SpaceMouse, etc.) — survives USB replug
     device_cgroup_rules:
-      - 'c 81:* rmw'                       # video4linux (RealSense UVC) — survives replug to new minors
+      - 'c 13:* rmw'                       # input (gamepad, SpaceMouse, etc.)
+      - 'c 81:* rmw'                       # video4linux (RealSense UVC)
       - 'c 189:* rmw'                      # usb (RealSense libusb)
     gpus: all                              # NVIDIA hardware GL + faster torch
     # Start Xvfb on :99 at container boot so ffmpeg x11grab has a local X server to record
@@ -55,4 +41,7 @@ services:
     # auto-crop the black borders via ffmpeg cropdetect.  Keep the Xvfb large enough that the
     # window is at a legible pixel count.
     command: >
-      bash -c 'Xvfb :99 -screen 0 1920x1080x24 -ac -nolisten tcp +extension GLX +render & sleep infinity'
+      bash -c 'Xvfb :99 -screen 0 1920x1080x24 -ac -nolisten tcp +extension GLX +render & \
+        LD_LIBRARY_PATH=/opt/ros/humble/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH \
+        /opt/ros/humble/bin/iox-roudi -c /home/user/mile-code/config/roudi_config.toml & \
+        sleep infinity'

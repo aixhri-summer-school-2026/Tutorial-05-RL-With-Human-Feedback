@@ -1,0 +1,38 @@
+# Iceoryx RouDi shared-memory config for the MILE container.
+# Mempools sized for CycloneDDS discovery + user data messages.
+# Images (sensor_msgs/Image) are variable-length and may fall back to
+# UDP even with shared memory enabled — the shm transport shunts only
+# fixed-size types.  If that's the case, the kernel buffer fix (via
+# host sysctl net.core.rmem_max) is the actual image fix.
+[general]
+version = 1
+
+[[segment]]
+
+[[segment.mempool]]
+size = 128
+count = 10000
+
+[[segment.mempool]]
+size = 1024
+count = 5000
+
+[[segment.mempool]]
+size = 16384
+count = 1000
+
+[[segment.mempool]]
+size = 131072
+count = 200
+
+[[segment.mempool]]
+size = 524288
+count = 50
+
+[[segment.mempool]]
+size = 1048576
+count = 30
+
+[[segment.mempool]]
+size = 8388608
+count = 10
