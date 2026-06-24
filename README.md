@@ -8,6 +8,8 @@ Codebase to replicate the results for https://liralab.usc.edu/mile/.
 
 ## MILE on Franka — block-stacking tutorial
 
+> **Summer-school participants:** start at [docs/tutorial/00-setup.md](docs/tutorial/00-setup.md).
+
 This fork adapts MILE to a Franka Panda block-stacking task ([design spec](docs/superpowers/specs/2026-06-15-mile-franka-stacking-design.md)). The whole pipeline runs **headless with a built-in fake backend** — no robot, no ROS, no MuJoCo, no GPU — so you can validate everything before touching hardware. The simulated/real Panda backends (multipanda_ros2 + SpaceMouse/Vive) drop into the same interfaces later.
 
 Activate the environment first (`conda activate mile`). Run all commands from the repo root.
