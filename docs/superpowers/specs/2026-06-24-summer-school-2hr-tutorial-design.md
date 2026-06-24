@@ -59,19 +59,21 @@ hard pin conflict on the Python `mujoco` package: MetaWorld-v2 needs `mujoco==2.
 **Key finding:** the Franka *sim loop* does **not** import the Python `mujoco` package — it
 talks to the multipanda sim over `mujoco_ros_msgs` (ROS/C++). Python `mujoco` is imported in
 only two places, `mile_franka/viz/mujoco_twin.py` and `scripts/view_cubes_mujoco.py` — the
-**read-only twin viewer** (`make view-twin`), a real-robot debug aid not used in the sim
-tutorial.
+**read-only twin viewer** (`make view-twin`), a real-robot debug aid.
 
 **Decision (A):** downgrade the image's Python `mujoco` to **2.3.7** and add the pinned
-MetaWorld v2 commit, producing **one image that runs all four tiers**. The only casualty is
-the twin viewer, which is dropped from this image (it is a France/real-robot tool, separate
-concern). The Franka sim loop is unaffected.
+MetaWorld v2 commit, producing **one image that runs all four tiers**. The **twin viewer is
+kept** — its two modules are adapted to run on `mujoco==2.3.7` (minor API differences from
+3.1 only; `mujoco.viewer` exists in both). The Franka sim loop is unaffected (it uses
+`mujoco_ros`, not Python `mujoco`).
 
 Concretely:
 - `docker/requirements-mile.txt`: change `mujoco>=3.1.0,<3.2.0` → `mujoco==2.3.7`; add
   `metaworld @ git+https://github.com/Farama-Foundation/Metaworld.git@c822f28f582ba1ad49eb5dcf61016566f28003ba`.
 - `docker/Dockerfile`: extend the build-time import assert to include `import metaworld`;
-  remove the "MetaWorld-free" comment; note the twin viewer is unavailable in this image.
+  remove the "MetaWorld-free" comment.
+- `mile_franka/viz/mujoco_twin.py` + `scripts/view_cubes_mujoco.py`: adapt to the
+  `mujoco==2.3.7` Python API so `make view-twin` still works in this image.
 - Bake the downloaded expert models (`gdown 1bzKGyOmX1ZCmAWnZiq_sAFRxi3AXvm4t`) and the
   pre-baked Franka base policy into the image (or a shipped volume) so Tier 1/Tier 3 need no
   network on the day.
@@ -118,12 +120,13 @@ container (`make shell`); each tier is a single `make` verb.
 - **0:10–0:30 · Tier 1 — MetaWorld, method on autopilot (no human).**
   `make tutorial-metaworld`: synthetic human from the downloaded expert, `auto_eval: true`;
   watch success climb across 2 rounds. "This is the role you'll play next."
-- **0:30–0:42 · Tier 2 — Franka fake, same code, your task (headless).**
-  `make tutorial-fake`: pre-baked mediocre base policy (~0.5); see the 9-dim obs / 4-DoF
-  action and the engineered failure mode. Fast; laptop fallback.
-- **0:42–0:55 · Visual sim + learn to intervene.** `make sim-up` + `make sim-gui`;
+- **0:30–0:35 · Tier 2 — Franka fake, same code, your task (headless, quick).**
+  `make tutorial-fake`: pre-baked mediocre base policy (~0.5); a 5-minute look at the 9-dim
+  obs / 4-DoF action and the engineered failure mode. Also the laptop fallback if MuJoCo is
+  heavy.
+- **0:35–0:50 · Visual sim + learn to intervene.** `make sim-up` + `make sim-gui`;
   `make tutorial-teleop`: keyboard free-play (clutch = ν, gripper toggle) to get the feel.
-- **0:55–1:25 · Tier 3 — be the human in sim.** `make eval-base` (before) →
+- **0:50–1:25 · Tier 3 — be the human in sim.** `make eval-base` (before) →
   **implement the loss** + `make tutorial-check-loss` → `make tutorial-collect` (clutch in
   when the policy is about to fail, 1–2 episodes) → `make tutorial-train` (1 round) →
   `make eval-after`. The payoff: your interventions moved the number. A seed dataset behind
@@ -146,8 +149,9 @@ container (`make shell`); each tier is a single `make` verb.
 
 ## 9. Build items (home-lab prep — the work to produce this)
 
-1. **Unified docker image** (Section 4): requirements + Dockerfile changes; bake expert +
-   base-policy artifacts; validate both loops in the rebuilt image.
+1. **Unified docker image** (Section 4): requirements + Dockerfile changes; adapt the twin
+   viewer modules to `mujoco==2.3.7`; bake expert + base-policy artifacts; validate both
+   loops (and `make view-twin`) in the rebuilt image.
 2. **`KeyboardDevice`** (Section 5): teleop ABC impl + injectable reader + unit tests; wire
    `intervener: keyboard` in `train_mile.py`.
 3. **Reduced tutorial configs**: `config_tutorial_metaworld.json` (few rounds/epochs,
@@ -182,7 +186,7 @@ container (`make shell`); each tier is a single `make` verb.
 ## 11. Acceptance (validated at home before France)
 
 1. Unified image builds; `import metaworld, mile, mile_franka` all succeed; `make
-   tutorial-check` passes.
+   tutorial-check` passes; `make view-twin` still opens on `mujoco==2.3.7`.
 2. `make tutorial-metaworld` finishes in ~10 min and shows success rate improving across
    rounds.
 3. `make tutorial-fake` reports a mediocre (~0.3–0.7) base-policy success.
@@ -196,8 +200,6 @@ container (`make shell`); each tier is a single `make` verb.
 ## 12. Out of scope
 
 - Changing the upstream MILE method or the MetaWorld reproduction results.
-- The twin viewer in the tutorial image (dropped per Section 4; remains a separate
-  real-robot tool on a `mujoco` 3.x environment).
 - France-day robot specifics that can only be validated on their hardware (FR3 + Vive +
   calibration) — covered by pre-session prep, not the tutorial flow.
 - Image-based observations / FoundationPose / peg-insertion as a Franka task.
