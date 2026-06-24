@@ -1,5 +1,10 @@
 # MILE training layer installed on top of hucebot:franka-humble.
-# Keep the base image's gymnasium==0.29.1 and rclpy intact. MetaWorld is intentionally absent.
+# Keep the base image's gymnasium==0.29.1 and rclpy intact.
+# mujoco 2.3.7 is MetaWorld-v2's native version; the Franka sim loop uses mujoco_ros
+# (C++), not this Python package, so the downgrade is safe. The twin viewer is adapted
+# to 2.3.7 in Task A3.
+mujoco==2.3.7
+metaworld @ git+https://github.com/Farama-Foundation/Metaworld.git@c822f28f582ba1ad49eb5dcf61016566f28003ba
 gymnasium==0.29.1
 stable-baselines3<=2.3.2
 imitation
@@ -8,7 +13,4 @@ tensorboard
 pyspacemouse
 hidapi
 pupil-apriltags
-# numpy-2-compatible opencv shadows the system apt package (4.5.4, numpy-1.x)
-# so gymnasium's atari_preprocessing import doesn't crash with numpy 2.2.6.
 opencv-python-headless
-# torch is installed separately in the Dockerfile (CPU wheel) to control the index URL.
