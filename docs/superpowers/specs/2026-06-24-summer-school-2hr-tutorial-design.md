@@ -41,7 +41,7 @@ hardware". All four tiers run inside **one docker image** (Section 4).
 | Tier | Backend | Human? | What the participant does | Point |
 |---|---|---|---|---|
 | **1. MetaWorld peg-insert** | MetaWorld sim | **No** — downloaded expert | Run reduced iterative loop; watch success climb across rounds | "MILE works (the paper), fully automated" |
-| **2. Franka fake backend** | kinematic fake | No | Run the pre-baked mediocre base policy (~0.5) | Same MILE code, new task; see obs/action + the one engineered failure mode; headless fallback |
+| **2. Franka fake backend** | kinematic fake | No | Run the pre-baked mediocre base policy (~0.5) | Same MILE code, new task; see obs/action + where the policy fails; headless fallback |
 | **3. Franka MuJoCo sim** | multipanda MuJoCo | **Yes — you** | Keyboard teleop: implement the loss, collect interventions, train, eval before/after | The visceral "I am the expert now" loop |
 | **4. Real FR3** | hucebot controller + hardware | shared | Keyboard (or Vive) teleop a real stack; same controller | Sim→real payoff, live |
 
@@ -99,13 +99,13 @@ only genuinely shared code is `mile_cont_loss_fn` (the TODO — dim-agnostic, op
 action/ν tensors), the 4-DoF action, and `[256,256]`.
 
 The peg-insert **intervention dataset is synthesized at runtime** by `collect_synthetic_data`
-from these four models, so no peg-insert dataset is shipped. The only datasets to bundle are
-the *Franka* base policy (≈0.7 MB) + seed `npz` (≈0.5 MB). Full bundle ≈ **7 MB**. The
-rate-limit risk is Drive throttling request *count*, not size.
+from these four models, so no peg-insert dataset is shipped. The only extra to bundle is the
+*Franka* mediocre base policy (≈0.7 MB); the seed `npz` is deferred (Section 14). Full bundle
+≈ **6.3 MB**. The rate-limit risk is Drive throttling request *count*, not size.
 
 - **You hit Drive once** (home lab): `gdown 1bzKGyOmX1ZCmAWnZiq_sAFRxi3AXvm4t`, add the
-  engineered-mediocre base policy + seed dataset, bundle into `tutorial-artifacts.tar` with a
-  published **SHA256**.
+  Franka mediocre base policy, bundle into `tutorial-artifacts.tar` with a published
+  **SHA256**.
 - **Re-host as a GitHub Release asset** on the tutorial repo (robust CDN, no quota,
   versioned). Participants already clone the repo for the homework build. (Small enough to
   git-LFS instead, but a Release keeps the clone lean.)
@@ -167,15 +167,17 @@ container (`make shell`); each tier is a single `make` verb.
   role you'll play next."
 - **0:40–0:45 · Tier 2 — Franka fake, same code, your task (headless, quick).**
   `make tutorial-fake`: pre-baked mediocre base policy (~0.5); a 5-minute look at the 9-dim
-  obs / 4-DoF action and the engineered failure mode. Also the laptop fallback if MuJoCo is
-  heavy.
+  obs / 4-DoF action and where the policy fails. Also the laptop fallback if MuJoCo is heavy.
 - **0:45–1:00 · Visual sim + learn to intervene.** `make sim-up` + `make sim-gui`;
   `make tutorial-teleop`: keyboard free-play (clutch = ν, gripper toggle) to get the feel.
 - **1:00–1:30 · Tier 3 — be the human in sim.** `make eval-base` (before) →
   `make tutorial-collect` (clutch in when the policy is about to fail, 1–2 episodes) →
   `make tutorial-train` (1 round, *reusing the loss you wrote*) → `make eval-after`. The
-  payoff: your interventions moved the number. A seed dataset behind the scenes ensures the
-  delta shows.
+  experience: you replace the synthetic expert from Tier 1 and teach the robot by
+  intervening. Runs on the existing mediocre base policy; the before→after delta is
+  best-effort (the *guaranteed* improvement demonstration lives in Tier 1, which removes the
+  pressure on each participant's sparse Franka data). Engineering a base policy with a single
+  fixable failure mode to make the Franka delta reliably visible is **deferred** (Section 14).
 - **~1:05–1:45 · Tier 4 — real FR3 station (parallel queue).** Staffed live robot;
   `make franka-up`; participants rotate in and teleop a real stack with the **keyboard**
   (or the **Vive** if wired). Sim work continues in parallel; the robot never gates the room.
@@ -195,17 +197,18 @@ container (`make shell`); each tier is a single `make` verb.
 ## 9. Build items (home-lab prep — the work to produce this)
 
 1. **Unified docker image** (Section 4): requirements + Dockerfile changes; adapt the twin
-   viewer modules to `mujoco==2.3.7`; bake expert + base-policy artifacts; validate both
-   loops (and `make view-twin`) in the rebuilt image.
+   viewer modules to `mujoco==2.3.7`; validate both loops (and `make view-twin`) in the
+   rebuilt image. Artifacts are **not** baked at build time — they mount as a volume
+   (Section 4.1).
 2. **`KeyboardDevice`** (Section 5): teleop ABC impl + injectable reader + unit tests; wire
    `intervener: keyboard` in `train_mile.py`.
 3. **Reduced tutorial configs**: `config_tutorial_metaworld.json` (few rounds/epochs,
    `auto_eval: true`, points at the downloaded expert; finishes ~10 min, visibly improves)
    and `config_franka_tutorial.json` (1–2 rounds, 1–2 episodes/round, fewer epochs,
    `intervener: keyboard`, `auto_eval: false`).
-4. **Engineered-mediocre base policy + seed intervention dataset**: a base policy with a
-   *single* fixable failure mode so a few interventions reliably move the eval number; seed
-   dataset as insurance.
+4. **Mediocre base policy**: reuse the existing `make base-policy` / `make eval-base` flow
+   (~0.3–0.7 success). *Deferred (Section 14): engineering a single fixable failure mode +
+   seed dataset to make the Tier 3 before→after delta reliably visible.*
 4b. **Artifact bundle + re-host** (Section 4.1): one-time `gdown`, assemble
    `tutorial-artifacts.tar` + SHA256, publish as a GitHub Release asset; a `make
    fetch-artifacts` verb that pulls the Release (not Drive), unpacks to the volume, and
@@ -217,12 +220,18 @@ container (`make shell`); each tier is a single `make` verb.
    `eval-base`/`eval-after` — thin wrappers so nobody types long commands.
 7. **Participant setup doc + homework script**: build/import the image, run
    `make tutorial-check`, before the session.
+8. **Detailed documentation set** (Section 13): the full participant + instructor docs —
+   pre-session setup guide, the per-tier walkthrough, the loss-exercise handout, a
+   troubleshooting/FAQ, and the instructor runbook.
 
 ## 10. Risks & mitigations
 
-- **Franka improvement not visible from sparse human data (headline risk)** → engineer the
-  base policy to one fixable failure mode; ship the seed dataset; rely on Tier 1 (MetaWorld)
-  as the *guaranteed* "success improves across rounds" demonstration.
+- **Franka improvement not visible from sparse human data (headline risk)** → **Tier 1
+  (MetaWorld) is the guaranteed** "success improves across rounds" demonstration, so the
+  payoff never depends on each participant's sparse Franka data; Tier 3 is framed as the
+  *experience* of intervening, with a best-effort delta. Engineering a single-failure-mode
+  base policy + seed dataset to make the Franka delta reliably visible is **deferred**
+  (Section 14).
 - **2h tight for 4 tiers** → Tier 2 is compressible/skippable; configs sized to finish fast;
   setup is homework; Tier 4 runs in parallel, not as a serial block.
 - **Loss TODO stalls people** → docstring spec + green-light test + auto-applied answer key +
@@ -247,7 +256,9 @@ container (`make shell`); each tier is a single `make` verb.
    in the sim window.
 5. `make tutorial-check-loss` goes green with the answer key; blanked scaffold fails it.
 6. End-to-end Tier 3 on the sim: `eval-base` → collect (keyboard) → train → `eval-after`
-   shows a visible improvement with the engineered base policy + seed dataset.
+   runs cleanly and produces before/after numbers on the existing mediocre base policy. A
+   visible improvement is best-effort; the *guaranteed* improvement demonstration is Tier 1
+   (acceptance #2).
 7. The whole flow runs from the single image with no host conda env.
 
 ## 12. Out of scope
@@ -256,3 +267,45 @@ container (`make shell`); each tier is a single `make` verb.
 - France-day robot specifics that can only be validated on their hardware (FR3 + Vive +
   calibration) — covered by pre-session prep, not the tutorial flow.
 - Image-based observations / FoundationPose / peg-insertion as a Franka task.
+
+## 13. Documentation deliverables
+
+Detailed docs are a first-class deliverable, not an afterthought — for a BYOL room running
+in parallel with a single instructor, the docs *are* the tutorial. All live under
+`docs/tutorial/` and ship with the repo. Each is concrete and copy-pasteable (exact commands,
+expected output, screenshots), and every command appears as a `make` verb (Section 9.6) so
+the prose stays short.
+
+1. **`00-setup.md` — pre-session setup guide (homework).** Host prerequisites (Linux/Ubuntu
+   22+, NVIDIA driver + `nvidia-container-toolkit`, Docker + compose, disk, ethernet);
+   clone + build/import the single image; `make fetch-artifacts`; `make tutorial-check`;
+   pairing/tower instructions for weak laptops; the "you're ready when you see …" check.
+2. **`01-concepts.md` — the 5-minute MILE primer.** What intervention learning is, ν, the
+   intervention model, joint policy + mental-model training, and how each tier maps to the
+   method. The conceptual anchor for the loss exercise.
+3. **`02-loss-exercise.md` — the loss handout (the one TODO).** The math (BCE on ν +
+   Gaussian NLL on ν=1 steps), tensor shapes, where to edit, how to run
+   `make tutorial-check-loss`, how the answer key auto-applies, and a worked explanation for
+   after they've attempted it.
+4. **`03-tier-walkthrough.md` — the per-tier hands-on script.** The full 0:00→2:00 flow
+   (Section 7) as numbered steps with exact commands, expected logs/numbers, and "what you
+   should see" callouts for each tier, including reading `eval-base`/`eval-after`.
+5. **`04-teleop.md` — teleop reference.** Keyboard map (move / clutch=ν / gripper / done /
+   discard), the segment-toggle intervention model, and the gamepad + Vive alternatives.
+6. **`05-troubleshooting.md` — FAQ.** The known failure modes: GL/rendering issues, X11 for
+   `sim-gui`, GPU not visible in container, artifact checksum mismatch, sim not up before
+   `mile`, device permissions — each with the one-line fix.
+7. **`06-instructor-runbook.md` — instructor/staff guide.** France-day pre-session prep
+   (Section 8), the real-FR3 station queue + safety invariants, timing/cuts if running long
+   (drop Tier 2, shrink rounds), the Vive-wiring switch, and per-tier talking points.
+
+Keep the repo `README.md` Franka section pointing at `docs/tutorial/` as the entry point.
+
+## 14. Deferred / future work
+
+- **Engineered single-failure-mode base policy + seed intervention dataset** — make the
+  Tier 3 Franka before→after delta *reliably visible* from a few interventions, rather than
+  best-effort. Until then, Tier 1 (MetaWorld) carries the guaranteed improvement
+  demonstration. (Deferred per 2026-06-24 decision.)
+- `COST_LOOKUP` calibration against the observed human intervention rate (sim + hardware).
+- Vive driver hardening beyond the day-of `intervener: vive` swap.
