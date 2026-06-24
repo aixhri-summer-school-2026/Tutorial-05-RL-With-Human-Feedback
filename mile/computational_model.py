@@ -17,9 +17,15 @@ COST_LOOKUP = {
     'pick-place-v2': [250, 200.0],
     'drawer-open-v2': [60, 75.0],
     'LunarLander-v2': [3, 1.0],
-    'Franka-Stack-Fake-v0': [70, 100.0],
-    'Franka-Stack-Sim-v0': [70, 100.0],
-    'Franka-Stack-Real-v0': [70, 100.0],
+    # Franka BC ActorCriticPolicy has log-prob ~[+4, +7] (no tanh squashing).
+    # MetaWorld SAC log-probs span ~[-30, 0] due to tanh-correction terms, hence
+    # their cost=70–250 range.  For this policy a cost of 2 with cdf_scale=2 gives
+    # P(ν=1) ≈ 0.21 when policy≈mental-model, with room to reach ~0.8 when they
+    # diverge meaningfully (Δ log-prob ≈ 4).  Tune these if the base-policy
+    # architecture or entropy profile changes.
+    'Franka-Stack-Fake-v0': [2, 2.0],
+    'Franka-Stack-Sim-v0': [2, 2.0],
+    'Franka-Stack-Real-v0': [2, 2.0],
 }
 LOG_STD_MAX = 2
 LOG_STD_MIN = -20

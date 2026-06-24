@@ -1,8 +1,8 @@
 {
     "train": {
         "num_epochs": 500,
-        "batch_size": 256,
-        "lr": 0.0001,
+        "batch_size": 128,
+        "lr": 0.00001,
         "lambda1": 1.0,
         "lambda2": 1.0
     },
@@ -11,6 +11,9 @@
         "mode": "iterative",
         "collector": "real",
         "intervener": "joystick",
+        "joystick_translation_scale": 0.5,
+        "intervention_cost": 2.0,
+        "intervention_cdf_scale": 2.0,
         "validate": { "enabled": false, "every_n_epochs": 100 },
         "logging": { "terminal_output_to_txt": false, "log_tb": false, "log_wandb": false },
         "save": {
@@ -26,7 +29,8 @@
         "policy_type": "bc",
         "policy_path": "../trained_models/franka/base_policy",
         "mental_model_type": "bc",
-        "use_warm_start": false,
+        "use_warm_start": true,
+        "warm_start_path": "../trained_models/franka/base_policy",
         "num_rounds": 5,
         "episodes_per_round": 3,
         "include_offline_dataset": false

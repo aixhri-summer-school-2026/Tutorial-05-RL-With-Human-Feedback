@@ -178,8 +178,9 @@ class InterventionTrainer:
         self.env_name = config['experiment']['env_name']
         if self.env_name not in COST_LOOKUP:
             raise ValueError(f'Cost lookup for {self.env_name} is not available, please add it to COST_LOOKUP')
-        self.intervention_cost = COST_LOOKUP[self.env_name][0]
-        self.intervention_scale = COST_LOOKUP[self.env_name][1]
+        default_cost, default_scale = COST_LOOKUP[self.env_name]
+        self.intervention_cost = self.experiment_config.get('intervention_cost', default_cost)
+        self.intervention_scale = self.experiment_config.get('intervention_cdf_scale', default_scale)
 
         self.score_window = deque(maxlen=100)
         self.init_policy = deepcopy(self.policy)
