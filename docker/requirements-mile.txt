@@ -3,8 +3,8 @@
 # mujoco 2.3.7 is MetaWorld-v2's native version; the Franka sim loop uses mujoco_ros
 # (C++), not this Python package, so the downgrade is safe. The twin viewer is adapted
 # to 2.3.7 in Task A3.
+# MetaWorld is installed separately in the Dockerfile (patched setup.py).
 mujoco==2.3.7
-metaworld @ git+https://github.com/Farama-Foundation/Metaworld.git@c822f28f582ba1ad49eb5dcf61016566f28003ba
 gymnasium==0.29.1
 stable-baselines3<=2.3.2
 imitation
