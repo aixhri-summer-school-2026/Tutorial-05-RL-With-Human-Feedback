@@ -45,7 +45,7 @@ def _make_render_env(env_name: str):
 
 def _save_video(frames: list, path: str, fps: int = 15) -> None:
     from moviepy import ImageSequenceClip
-    clip = ImageSequenceClip(frames, fps=fps)
+    clip = ImageSequenceClip([f[::-1] for f in frames], fps=fps)
     clip.write_videofile(path, codec='libx264', logger=None)
 
 
