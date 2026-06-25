@@ -1,5 +1,5 @@
 {
-    "train":{
+    "train": {
         "num_epochs": 300,
         "batch_size": 1024,
         "lr": 0.0001,
@@ -46,4 +46,3 @@
         "offline_dataset_path": "path_to_initial_offline_demonstration_dataset"
     }
 }
-    

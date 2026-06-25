@@ -27,6 +27,11 @@ scripts/topic_diag.py
 scripts/tune_intervention_cost.py
 scripts/franka_real_home_smoke.py
 
-# Dev planning docs (notes and plans; specs stay tracked for CLAUDE.md reference)
-docs/superpowers/notes/
-docs/superpowers/plans/
+# Dev planning docs (superpowers internal; not for tutorial participants)
+docs/superpowers/
+
+# IDE / tooling internals
+.claude/
+
+# Container bind-mount artifact (docker overlay filesystem roots)
+tm/

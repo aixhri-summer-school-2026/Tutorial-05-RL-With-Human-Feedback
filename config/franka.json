@@ -14,8 +14,15 @@
         "joystick_translation_scale": 0.5,
         "intervention_cost": 2.0,
         "intervention_cdf_scale": 2.0,
-        "validate": { "enabled": false, "every_n_epochs": 100 },
-        "logging": { "terminal_output_to_txt": false, "log_tb": false, "log_wandb": false },
+        "validate": {
+            "enabled": false,
+            "every_n_epochs": 100
+        },
+        "logging": {
+            "terminal_output_to_txt": false,
+            "log_tb": false,
+            "log_wandb": false
+        },
         "save": {
             "enabled": true,
             "every_n_epochs": 0,
@@ -24,7 +31,12 @@
             "on_best_rollout_success_rate": false,
             "outdir": "../output_dir/franka"
         },
-        "rollout": { "enabled": false, "auto_eval": false, "n_episodes": 5, "every_n_epochs": 100 },
+        "rollout": {
+            "enabled": false,
+            "auto_eval": false,
+            "n_episodes": 5,
+            "every_n_epochs": 100
+        },
         "env_name": "Franka-Stack-Sim-v0",
         "policy_type": "bc",
         "policy_path": "../trained_models/franka/base_policy",

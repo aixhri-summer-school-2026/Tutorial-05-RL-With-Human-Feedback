@@ -355,7 +355,7 @@ def iterative_training(config):
 
 def main():
     parser = argparse.ArgumentParser(description='Intervention training')
-    parser.add_argument('--config', type=str, default='config.json', help='Path to the config file')
+    parser.add_argument('--config', type=str, default='config/metaworld.json', help='Path to the config file')
     args = parser.parse_args()
     config = read_config(args.config)
     if config['experiment']['save']['enabled']:

@@ -1,0 +1,46 @@
+{
+    "train": {
+        "num_epochs": 100,
+        "batch_size": 256,
+        "lr": 0.0001,
+        "lambda1": 1.0,
+        "lambda2": 1.0
+    },
+    "experiment": {
+        "name": "tutorial_franka",
+        "mode": "iterative",
+        "validate": {
+            "enabled": false,
+            "every_n_epochs": 100
+        },
+        "logging": {
+            "terminal_output_to_txt": false,
+            "log_tb": false,
+            "log_wandb": false
+        },
+        "save": {
+            "enabled": true,
+            "every_n_epochs": 0,
+            "on_best_validation": false,
+            "on_best_rollout_return": false,
+            "on_best_rollout_success_rate": false,
+            "outdir": "output_dir"
+        },
+        "rollout": {
+            "enabled": false,
+            "n_episodes": 0,
+            "every_n_epochs": 0,
+            "auto_eval": false
+        },
+        "env_name": "Franka-Stack-Sim-v0",
+        "collector": "real",
+        "intervener": "keyboard",
+        "keyboard_translation_scale": 0.02,
+        "policy_type": "bc",
+        "policy_path": "./trained_models/franka/base_policy",
+        "mental_model_type": "bc",
+        "num_rounds": 1,
+        "episodes_per_round": 2,
+        "include_offline_dataset": false
+    }
+}

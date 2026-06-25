@@ -59,11 +59,11 @@ base-policy:                 ## BC-train the (mediocre) base policy offline; ove
 	  --demos $(DEMOS) --bc_batch_size 256 --bc_ent_weight 0.0 --eval_episodes 0 \
 	  --save_path trained_models/franka/base_policy)
 
-mile:                        ## iterative MILE run in sim (config_franka.json)
-	$(call RUN,cd scripts && python3 train_mile.py --config ../config_franka.json)
+mile:                        ## iterative MILE run in sim (config/franka.json)
+	$(call RUN,cd scripts && python3 train_mile.py --config ../config/franka.json)
 
 mile-real:                   ## iterative MILE run on the real Franka (needs controller + apriltag-up running). MILE_REAL_STACK=fr3|multipanda (default fr3). MILE_APPLY_SIM_GAINS=1 to track against the lab sim.
-	$(DC) exec -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} -e MILE_APPLY_SIM_GAINS sim bash -lc '$(ENVSH) && $(KILLCLIENTS); cd scripts && python3 train_mile.py --config ../config_franka_real.json'
+	$(DC) exec -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} -e MILE_APPLY_SIM_GAINS sim bash -lc '$(ENVSH) && $(KILLCLIENTS); cd scripts && python3 train_mile.py --config ../config/franka_real.json'
 
 spacemouse-check:            ## print live SpaceMouse deflection (sanity check; Ctrl-C to stop)
 	$(call RUN,python3 scripts/spacemouse_check.py)
@@ -99,7 +99,7 @@ franka-shell:                ## open a shell in the franka_ros2 container (env +
 	docker exec -it $(FRANKA_CTR) bash -lc '$(FRANKA_SRC) && exec bash'
 
 apriltag-up:                 ## launch realsense2_camera + apriltag_ros + calibration static tf (foreground). MILE_REAL_STACK=fr3|multipanda (default fr3).
-	$(DC) exec -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} -e MILE_CAMERA_CALIB sim bash -lc '$(ENVSH) && self=$$$$; pgrep -f "apriltag_realsense.launch.py|apriltag_node|realsense2_camera_node|static_transform_publisher.*camera_to_base" | grep -vx $$self | xargs -r kill 2>/dev/null; sleep 2; ros2 launch launch/apriltag_realsense.launch.py'
+	$(DC) exec -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} -e MILE_CAMERA_CALIB sim bash -lc '$(ENVSH) && self=$$$$; pgrep -f "apriltag_realsense.launch.py|apriltag_node|realsense2_camera_node|static_transform_publisher.*camera_to_base" | grep -vx $$self | xargs -r kill 2>/dev/null; sleep 2; ros2 launch mile_franka/launch/apriltag_realsense.launch.py'
 
 calibrate-camera:            ## eye-to-hand camera calibration → MJPEG preview at http://localhost:8080 (needs controller + apriltag-up running). MILE_REAL_STACK=fr3|multipanda (default fr3).
 	$(DC) exec -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} -e MILE_CAMERA_CALIB -e PYTHONUNBUFFERED=1 sim bash -lc '$(ENVSH) && python3 -u scripts/calibrate_camera.py'
@@ -139,10 +139,10 @@ tutorial-check-loss:         ## green-light test for the MILE-loss exercise
 	python3 -m pytest tests/test_loss_exercise.py -v
 
 tutorial-metaworld:          ## Tier 1: run the MetaWorld synthetic loop (uses your loss)
-	cd scripts && python3 tutorial_train.py --config ../config_tutorial_metaworld.json
+	cd scripts && python3 tutorial_train.py --config ../config/tutorial_metaworld.json
 
 tutorial-collect-train:      ## Tier 3: collect interventions (keyboard) + train (uses your loss)
-	cd scripts && python3 tutorial_train.py --config ../config_tutorial_franka.json
+	cd scripts && python3 tutorial_train.py --config ../config/tutorial_franka.json
 
 tutorial-fake:               ## Tier 2: run the mediocre base policy on the fake backend
 	python3 scripts/smoke_franka_env.py

@@ -24,9 +24,8 @@ This fork's active project: **adapt MILE to run on a real Franka Panda (via huce
 design is built and validated against `multipanda_ros2`'s MuJoCo sim with an Xbox gamepad
 (joystick) in the home lab, then deployed on hardware with an HTC Vive in France — the two backends run
 the *same* Cartesian-impedance controller, so only the teleop device, object-pose source,
-and robot backend swap. **Read `docs/superpowers/specs/2026-06-15-mile-franka-stacking-design.md`
-before working on the Franka adaptation** — it records the design and the verified
-codebase facts below.
+and robot backend swap. The design and verified codebase facts for the Franka adaptation
+are recorded in the architecture section below.
 
 ## Setup
 
@@ -43,7 +42,7 @@ Pretrained models for the Peg-Insert reproduction: `gdown 1bzKGyOmX1ZCmAWnZiq_sA
 ```bash
 # --- Upstream MILE on MetaWorld ---
 # Train (offline or iterative — selected by config["experiment"]["mode"])
-python scripts/train_mile.py --config config.json
+python scripts/train_mile.py --config config/metaworld.json
 
 # Evaluate a trained model
 python scripts/eval_mile.py --trained_model <dir> --num_episodes 100
@@ -59,7 +58,7 @@ make sim-up                   # launch the multipanda MuJoCo stacking sim headle
 make collect-mediocre         # MEDIOCRE rollouts -> sim_demos_mediocre.npz (feeds the base policy)
 make collect-expert           # PERFECT successful-only rollouts -> sim_demos_expert.npz (reference)
 make base-policy              # BC-train the mediocre base policy from sim_demos_mediocre.npz
-make mile                     # iterative MILE run (config_franka.json, Franka-Stack-Sim-v0)
+make mile                     # iterative MILE run (config/franka.json, Franka-Stack-Sim-v0)
 make shell                    # interactive in-container shell (env sourced)
 make joystick-check           # print live gamepad axes/buttons (sanity check)
 make pose-test                # run 20 pose-layer unit tests (no ROS/hardware needed)
@@ -69,17 +68,17 @@ make apriltag-up              # (in-container) launch D415 + apriltag_ros + cali
 make calibrate-camera         # (in-container) eye-to-hand calibration capture -> camera_calib.yaml
 make close-gripper            # (in-container) clamp the gripper (e.g. onto the calib board); GRIP_FORCE/CLOSE_WIDTH overridable
 make open-gripper             # (in-container) release the gripper; OPEN_WIDTH overridable
-make mile-real                # (in-container) iterative MILE on real FR3 (config_franka_real.json)
+make mile-real                # (in-container) iterative MILE on real FR3 (config/franka_real.json)
 make eval-real                # (in-container) policy eval on real FR3
 make view-twin                # (in-container, host display) read-only MuJoCo twin: cubes from AprilTag, arm from /joint_states; safe to run alongside mile-real/eval-real
 ```
 
-The `config_franka.json` targets `Franka-Stack-Sim-v0` and runs in-container via `make mile`
+The `config/franka.json` targets `Franka-Stack-Sim-v0` and runs in-container via `make mile`
 against a live `make sim-up`: `mode: iterative`, `collector: real` + `intervener: joystick`
 (human-in-the-loop with an Xbox gamepad), `rollout.auto_eval: false`,
 `num_rounds: 5`, `episodes_per_round: 3`, `num_epochs: 500`. The fake env (`Franka-Stack-Fake-v0`)
-is retained only for import-level checks, not as a pipeline gate. `config.json` /
-`config_franka.json` are the single source of run configuration (env, modes,
+is retained only for import-level checks, not as a pipeline gate. `config/metaworld.json` /
+`config/franka.json` are the single source of run configuration (env, modes,
 policy/mental-model types and paths, logging, save, rollout, **`collector`**,
 **`intervener`**, **`rollout.auto_eval`**).
 
@@ -176,7 +175,7 @@ imports and the smoke scripts run with no ROS installed.
   `JoystickDevice` (`joystick.py`, pygame gamepad — **the default dev teleop device**, ν via a
   stateful clutch-toggle segment) and `SpaceMouseDevice` (`spacemouse.py`, kept as an alternative,
   ν = clutch-or-motion) — both use an injectable raw reader so they load/test without hardware.
-  Select via `intervener: joystick|spacemouse` in `config_franka.json` (currently `joystick`).
+  Select via `intervener: joystick|spacemouse` in `config/franka.json` (currently `joystick`).
 - **`mile_franka/policies/`** — `ScriptedStackPolicy` (`scripted.py`, mediocre state machine
   over GT poses — reads `env.unwrapped.privileged_frame()`, not the reduced obs; per-episode
   randomizes transit/lift height U[0.10,0.25] and placement gap U[0.002,0.015]; pass the active
@@ -189,7 +188,6 @@ imports and the smoke scripts run with no ROS installed.
   `InterventionDatasetBuilder` (`data/dataset.py`, `BOX_KEYS` is the single schema source).
 - **`mile_franka/envs/ros_backend.py` + `pose/mujoco_gt.py` carry `CONFIRM@bringup:` markers**
   (`grep -rn CONFIRM@bringup mile_franka`) for topic/action/frame names to confirm against the
-  live hucebot controller; see `docs/superpowers/notes/2026-06-15-phase2-bringup-checklist.md`.
+  live hucebot controller; see `docs/superpowers/bringup-reference.md`.
 
-Plans/specs live under `docs/superpowers/`. The real backend must run against **hucebot's
-multipanda_ros2 controller docker** (the France lab's image), not a hand-rolled stack.
+The real backend must run against **hucebot's multipanda_ros2 controller docker** (the France lab's image), not a hand-rolled stack.

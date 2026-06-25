@@ -63,7 +63,7 @@ _TAG_IDS = [0, 1]  # 0 = bottom cube, 1 = top cube
 _TAG_NAMES = {0: "bottom", 1: "top"}
 # Placeholder intrinsics used ONLY until the first camera_info arrives. The real
 # K comes from the RealSense factory calibration on _CAMERA_INFO_TOPIC; the color
-# stream runs at 1280x720 (see launch/apriltag_realsense.launch.py).
+# stream runs at 1280x720 (see mile_franka/launch/apriltag_realsense.launch.py).
 _DEFAULT_INTRINSICS = (915.0, 915.0, 640.0, 360.0)
 _IMAGE_WIDTH, _IMAGE_HEIGHT = 1280, 720
 
