@@ -28,8 +28,8 @@ The keyboard is the default teleop device for the tutorial's sim and fake-world 
 |---|---|---|
 | **W** | Move forward (+X) | 0.02 m per press |
 | **S** | Move backward (-X) | 0.02 m per press |
-| **A** | Move left (-Y) | 0.02 m per press |
-| **D** | Move right (+Y) | 0.02 m per press |
+| **A** | Move left (+Y) | 0.02 m per press |
+| **D** | Move right (-Y) | 0.02 m per press |
 | **Q** | Move up (+Z) | 0.02 m per press |
 | **E** | Move down (-Z) | 0.02 m per press |
 | **Space** | Toggle intervention segment | Press once to start (ν=1), again to stop (ν=0) |
@@ -161,7 +161,7 @@ Switch devices by editing the config and restarting the collector.
 - **Check key layout**: if you're not on QWERTY, remap the keys in code or use joystick instead.
 
 ### Joystick: no input detected
-- **Check connection**: `lsjs /dev/input/js*` (or ask the instructor).
+- **Check connection**: `ls /dev/input/js*` (or ask the instructor).
 - **Test**: press a button. If the terminal shows nothing, the gamepad may not be detected.
 - **Fallback**: use keyboard instead.
 

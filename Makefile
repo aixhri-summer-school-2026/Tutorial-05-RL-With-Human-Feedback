@@ -16,7 +16,7 @@ ROBOT_IP      ?= 169.254.202.10
 LOAD_GRIPPER  ?= true
 FRANKA_SRC    := source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-.PHONY: build up down shell sim-up sim-gui collect-mediocre collect-expert base-policy mile mile-real spacemouse-check joystick-check eval-base eval-mile pose-test franka-up franka-shell apriltag-up calibrate-camera close-gripper open-gripper eval-real view-tags view-twin real-home-smoke
+.PHONY: build up down shell sim-up sim-gui collect-mediocre collect-expert base-policy mile mile-real spacemouse-check joystick-check eval-base eval-mile pose-test franka-up franka-shell apriltag-up calibrate-camera close-gripper open-gripper eval-real view-tags view-twin real-home-smoke tutorial-check tutorial-check-loss tutorial-metaworld tutorial-collect-train tutorial-fake tutorial-teleop
 
 build:                       ## build the image (classic builder: base hucebot:franka-humble is local-only, not on a registry)
 	DOCKER_BUILDKIT=0 $(DC) build
@@ -136,8 +136,8 @@ fetch-artifacts:             ## trained models are in the repo; no download need
 tutorial-check:              ## assert imports + artifacts are present (run in container)
 	$(call RUN,python3 scripts/tutorial_check.py)
 
-tutorial-check-loss:         ## green-light test for the MILE-loss exercise
-	python3 -m pytest tests/test_loss_exercise.py -v
+tutorial-check-loss:         ## green-light test for the MILE-loss exercise (run from host or inside container)
+	$(DC) exec sim bash -c 'cd /home/user/mile-code && python3 -m pytest tests/test_loss_exercise.py -v'
 
 tutorial-metaworld:          ## Tier 1: run the MetaWorld synthetic loop (uses your loss)
 	cd scripts && python3 tutorial_train.py --config ../config/tutorial_metaworld.yaml
@@ -147,3 +147,6 @@ tutorial-collect-train:      ## Tier 3: collect interventions (keyboard) + train
 
 tutorial-fake:               ## Tier 2: run the mediocre base policy on the fake backend
 	python3 scripts/smoke_franka_env.py
+
+tutorial-teleop:             ## Tier 3 practice: free-play keyboard teleop in sim (Ctrl-C to exit, data not saved)
+	python3 scripts/tutorial_teleop.py

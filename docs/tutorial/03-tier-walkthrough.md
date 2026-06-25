@@ -232,10 +232,10 @@ This launches a free-play mode where you can experiment with the keyboard. Refer
 
 | Key | Action |
 |---|---|
-| `w` / `s` | move forward/backward (Δy) |
-| `a` / `d` | move left/right (Δx) |
+| `w` / `s` | move forward/backward (Δx) |
+| `a` / `d` | move left/right (Δy) |
 | `q` / `e` | move up/down (Δz) |
-| **SPACE** | **toggle intervention (ν)** — hold to take over |
+| **SPACE** | **toggle intervention (ν)** — press once to take over, press again to release |
 | `g` | toggle gripper (open/close) |
 | `enter` | end episode (done) |
 | `backspace` | discard episode (undo) |
@@ -250,9 +250,9 @@ This launches a free-play mode where you can experiment with the keyboard. Refer
 
 **The clutch toggle (SPACE):**
 
-- When **ν=0** (no clutch), the policy is commanding the arm. You see the policy's motion in real-time.
-- When **ν=1** (clutch held), **you** command the arm. The policy learns from this.
-- In Tier 3, you'll hold the clutch *only when the policy is about to fail*, teaching it to correct itself.
+- When **ν=0** (clutch off), the policy is commanding the arm. You see the policy's motion in real-time.
+- When **ν=1** (clutch on), **you** command the arm. The policy learns from this.
+- In Tier 3, you'll toggle the clutch on *only when the policy is about to fail*, and toggle it off once you've corrected the error.
 
 **Duration:** 5–10 min of free-play to get comfortable. When you feel confident, move to Tier 3.
 
@@ -297,8 +297,8 @@ make tutorial-collect-train
 
 1. The container launches the training system.
 2. The sim displays the arm. The policy is running.
-3. **You watch and intervene:** when you see the policy is about to fail (reaching for empty space, gripper off-target, etc.), **hold SPACE** and take over.
-4. Once you fix the situation, **release SPACE** and let the policy continue.
+3. **You watch and intervene:** when you see the policy is about to fail (reaching for empty space, gripper off-target, etc.), **press SPACE** to toggle intervention on and take over.
+4. Once you fix the situation, **press SPACE again** to toggle intervention off and let the policy continue.
 5. When the episode ends (cube stacked or failed), press **ENTER** to mark the episode done. Press **BACKSPACE** to discard if you want to retry.
 
 **How much to collect:**
@@ -333,7 +333,7 @@ The same loss you implemented in Tier 1, now on *your* data. The policy learns f
 After training finishes, run:
 
 ```bash
-make eval-base
+make eval-mile
 ```
 
 **Expected output:**

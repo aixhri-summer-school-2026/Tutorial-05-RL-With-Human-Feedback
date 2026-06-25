@@ -321,9 +321,12 @@ class InterventionTrainer:
         return validation_metrics 
     
     def train(self, train_dataloader: DataLoader, val_dataloader: DataLoader, round: Optional[int]=None):
+        import os
         best_success_rate = 0
-        best_policy = None
-        best_mental_model = None
+        _outdir = self.experiment_config['save']['outdir']
+        _best_policy_path = os.path.join(_outdir, '_best_policy_ckpt')
+        _best_mental_model_path = os.path.join(_outdir, '_best_mental_model_ckpt')
+        _has_best_checkpoint = False
         for epoch in range(1, self.num_epochs+1):
             validation_metrics = None
             success_rate = None
@@ -343,8 +346,9 @@ class InterventionTrainer:
                     scores_window, init_success_rate = generate_rollout(self.init_policy, self.env, env_name=self.env_name, num_episodes=self.experiment_config['rollout']['n_episodes'], scores_window=scores_window)
                     if success_rate > best_success_rate:
                         best_success_rate = success_rate
-                        best_policy = deepcopy(self.policy)
-                        best_mental_model = deepcopy(self.mental_model)
+                        self.policy.save(_best_policy_path)
+                        self.mental_model.save(_best_mental_model_path)
+                        _has_best_checkpoint = True
     
             if self.experiment_config['save']['enabled'] and self.experiment_config['save']['every_n_epochs'] > 0:
                 save_every = self.experiment_config['save']['every_n_epochs']
@@ -363,8 +367,11 @@ class InterventionTrainer:
         if self.experiment_config['save']['enabled']:
             self.policy.save(self.experiment_config['save']['outdir']+'/policy')
             self.mental_model.save(self.experiment_config['save']['outdir']+'/mental_model')
-            if self.experiment_config['save']['on_best_rollout_success_rate'] and best_policy is not None:
-                best_policy.save(self.experiment_config['save']['outdir']+'/best_policy')
-                best_mental_model.save(self.experiment_config['save']['outdir']+'/best_mental_model')
+            if self.experiment_config['save']['on_best_rollout_success_rate'] and _has_best_checkpoint:
+                import shutil
+                for _src, _dst in [(_best_policy_path + '.zip', _outdir + '/best_policy.zip'),
+                                    (_best_mental_model_path + '.zip', _outdir + '/best_mental_model.zip')]:
+                    if os.path.exists(_src):
+                        shutil.copy(_src, _dst)
             with open(self.experiment_config['save']['outdir']+'/config.pkl', 'wb') as f:
                 pickle.dump(self.config, f)

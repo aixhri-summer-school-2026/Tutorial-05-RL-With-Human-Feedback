@@ -90,25 +90,25 @@ If you have a Vive:
 2. Verify `ros2 topic list | grep vive` shows hand tracking topics.
 3. Record the ROS topic names (handed pose) for the `ViveDevice` instantiation.
 
-**Later, at Tier 4:** If you wire the Vive, swap `"intervener": "keyboard"` → `"intervener": "vive"` in `config/tutorial_franka_real.yaml`. No other code changes needed.
+**Later, at Tier 4:** If you wire the Vive, swap `"intervener": "keyboard"` → `"intervener": "vive"` in `config/franka_real.yaml`. No other code changes needed.
 
 ---
 
 ### 5. Tune COST_LOOKUP for the real robot (if needed)
 
-The intervention model uses hyperparameters `[cost, cdf_scale]` per environment. The Franka entry is currently `[70, 100.0]`, retuned from peg-insert `[250, 200.0]` and calibrated against observed real-robot intervention rates.
+The intervention model uses hyperparameters `[cost, cdf_scale]` per environment. The Franka entry is currently `[2, 2.0]`, tuned for the BC ActorCriticPolicy log-prob scale (much smaller than MetaWorld SAC's `[75–250, 175–200]` range due to the absence of tanh squashing corrections).
 
 **If your real-robot tests show:**
-- **Too many interventions (high ν):** increase `cost` (e.g., 70 → 100). The model becomes more selective.
-- **Too few interventions (low ν):** decrease `cost` (e.g., 70 → 50). The model asks for help more often.
+- **Too many interventions (high ν):** increase `cost` (e.g., 2 → 5). The model becomes more selective.
+- **Too few interventions (low ν):** decrease `cost` (e.g., 2 → 1). The model asks for help more often.
 
 File: `/home/ray/mile-franka-tutorial/mile/computational_model.py`, line ~50:
 
 ```python
 COST_LOOKUP = {
-    "Franka-Stack-Fake-v0": [70, 100.0],    # Fake backend (training sim)
-    "Franka-Stack-Sim-v0": [70, 100.0],     # MuJoCo sim (Tier 3)
-    "Franka-Stack-Real-v0": [70, 100.0],    # Real FR3 (Tier 4) — tune if needed
+    "Franka-Stack-Fake-v0": [2, 2.0],    # Fake backend (training sim)
+    "Franka-Stack-Sim-v0": [2, 2.0],     # MuJoCo sim (Tier 3)
+    "Franka-Stack-Real-v0": [2, 2.0],    # Real FR3 (Tier 4) — tune if needed
     ...
 }
 ```
@@ -250,7 +250,7 @@ The real-robot station runs **in parallel**, not sequentially. Tier 4 does **not
    ```
 
 2. **Edit the config:**
-   Open `/home/ray/mile-franka-tutorial/config/tutorial_franka_real.yaml`:
+   Open `/home/ray/mile-franka-tutorial/config/franka_real.yaml`:
    
    ```json
    {
@@ -278,7 +278,7 @@ The real-robot station runs **in parallel**, not sequentially. Tier 4 does **not
 
 ### Switching back to keyboard
 
-1. **Edit `config/tutorial_franka_real.yaml`:**
+1. **Edit `config/franka_real.yaml`:**
    ```json
    "intervener": "keyboard"
    ```
@@ -392,7 +392,7 @@ Quickly reference these files if you need to adjust things on the fly:
    - `episodes_per_round`, `num_epochs`: reduce if running long.
    - `intervener`: `keyboard` (default) or `joystick` or `vive` (if wired).
 
-2. **`config/tutorial_franka_real.yaml`** (Tier 4, real):
+2. **`config/franka_real.yaml`** (Tier 4, real):
    - `intervener`: same as above. Swap to `vive` if you wire the headset.
    - `rollout.auto_eval`: set to `false` (never auto-eval the policy on real hardware).
 
