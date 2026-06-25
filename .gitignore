@@ -37,6 +37,10 @@ scripts/franka_real_home_smoke.py
 # Dev planning docs (superpowers internal; not for tutorial participants)
 docs/superpowers/
 
+# Instructor-only / internal review docs (kept local, not published)
+docs/tutorial/TUTORIAL_REVIEW_REPORT.md
+docs/tutorial/06-instructor-runbook.md
+
 # IDE / tooling internals
 .claude/
 CLAUDE.md

@@ -35,7 +35,7 @@ def _make_render_env(env_name: str):
             cls = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[env_name + '-goal-observable']
             renv = cls(render_mode='rgb_array')
             renv._freeze_rand_vec = False
-            renv.camera_name = 'corner'
+            renv.camera_name = 'corner2'
             renv.camera_id = None
             return renv
     except Exception:

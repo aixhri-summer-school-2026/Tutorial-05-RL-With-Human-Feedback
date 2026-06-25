@@ -2,7 +2,7 @@
 
 This guide walks you through the one-time setup needed before the 2-hour summer-school tutorial. **Do this at home**, not at the venue. Setup takes 30–60 minutes depending on your internet and hardware; the longest step is the docker image build (∼20 min on a typical laptop with GPU).
 
-**Goal:** your laptop is ready to run the tutorial when you walk in. All four tiers (MetaWorld → Franka fake → Franka sim → Franka real) will work seamlessly from one docker image.
+**Goal:** your laptop is ready to run the tutorial when you walk in. All four parts (MetaWorld → Franka fake → Franka sim → Franka real) will work seamlessly from one docker image.
 
 ---
 
@@ -93,7 +93,7 @@ make build
 
 **Expected output:** final line should say something like `Successfully tagged mile:franka-humble`. If you see build errors, [check troubleshooting](#troubleshooting).
 
-You now have a `mile:franka-humble` image ready to run all four tutorial tiers.
+You now have a `mile:franka-humble` image ready to run all four tutorial parts.
 
 ---
 

@@ -1,4 +1,4 @@
-# Tutorial Tier 1 — MetaWorld synthetic loop (make tutorial-metaworld)
+# Tutorial Part 1 — MetaWorld synthetic loop (make tutorial-metaworld)
 # Tests the participant's MILE loss implementation; runs in ~5 min.
 # Scaled-down version of metaworld.yaml: 2 rounds, 50 epochs, smaller batch.
 

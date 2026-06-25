@@ -15,3 +15,7 @@ hidapi
 pupil-apriltags
 opencv-python-headless
 moviepy
+# Optional OS-wide keyboard teleop (KeyboardDevice reader_backend="global"; default is
+# the focus-window "pygame" backend). The X11 backend pulls in python-xlib; needs a live
+# DISPLAY at runtime, not at import.
+pynput

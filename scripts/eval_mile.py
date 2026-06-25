@@ -9,6 +9,9 @@ import argparse
 import os
 
 import torch
+import functools
+# PyTorch 2.6 changed weights_only default to True, breaking SB3's policy.load().
+torch.load = functools.partial(torch.load, weights_only=False)
 
 from stable_baselines3.sac.policies import SACPolicy
 from stable_baselines3.dqn.policies import QNetwork
@@ -56,6 +59,7 @@ def eval(args):
                                                   env_name=env_name,
                                                   num_episodes=args.num_episodes,
                                                   scores_window=score_window,
+                                                  video_dir=args.video_dir,
                                                   )
     
     print(f"Average score over {args.num_episodes} episodes: {np.mean(score_window)}")
@@ -65,5 +69,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--trained_model', type=str, required=True, help='Path to the trained model')
     parser.add_argument('--num_episodes', type=int, default=100)
+    parser.add_argument('--video_dir', type=str, default=None, help='Directory to save per-episode videos')
     args = parser.parse_args()
     eval(args)

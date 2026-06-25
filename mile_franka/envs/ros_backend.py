@@ -317,22 +317,44 @@ class MultipandaRosBackend(RobotBackend):
         else:
             raise RuntimeError(
                 f"controller {self.controller_name} not loadable within {timeout:.0f}s: {last}")
-        # 2. Confirm the controller's param interface is actually addressable.
-        while time.time() < deadline:
-            result = self._run_param("list", [f"/{self.controller_name}"], check=False)
-            if result.returncode == 0:
-                return
-            last = (result.stderr or result.stdout).strip()
-            time.sleep(1.0)
+        # 2. Confirm the controller's parameter interface is addressable, in-process over
+        #    the backend's existing DDS session. A daemonless `ros2 param list` here costs
+        #    ~15 s (full discovery per CLI call); waiting on the param service is instant.
+        from rcl_interfaces.srv import ListParameters
+        probe = self._node.create_client(
+            ListParameters, f"/{self.controller_name}/list_parameters")
+        if probe.wait_for_service(timeout_sec=max(1.0, deadline - time.time())):
+            return
         raise RuntimeError(
             f"controller {self.controller_name} loaded but param node not addressable "
-            f"within {timeout:.0f}s: {last}")
+            f"within {timeout:.0f}s")
 
     def _apply_controller_gains(self, gains: dict[str, float]) -> None:
-        """Apply the sim-validated stacking gains to the loaded controller."""
+        """Apply the sim-validated stacking gains to the loaded controller.
+
+        Sets all gains in one in-process call to /<controller>/set_parameters over the
+        backend's own (already-discovered) node, NOT `ros2 param set` subprocesses. Each
+        daemonless CLI call pays ~10 s of DDS discovery, so 7 gains cost ~75 s of startup;
+        the in-process batch reuses the live DDS session and completes in <1 s.
+        """
+        from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
+        from rcl_interfaces.srv import SetParameters
+
+        client = self._node.create_client(
+            SetParameters, f"/{self.controller_name}/set_parameters")
+        if not client.wait_for_service(timeout_sec=10.0):
+            raise RuntimeError(
+                f"{self.controller_name}/set_parameters unavailable; cannot apply gains")
+        req = SetParameters.Request()
         for name, value in gains.items():
-            self._run_param(
-                "set", [f"/{self.controller_name}", name, str(value)], check=True)
+            req.parameters.append(Parameter(
+                name=name,
+                value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE,
+                                     double_value=float(value))))
+        result = self._call(client, req, timeout=10.0)
+        failed = [n for n, r in zip(gains, result.results) if not r.successful]
+        if failed:
+            raise RuntimeError(f"failed to set controller gains: {failed}")
 
     def _activate_controller(self) -> None:
         """Activate so the controller captures the current EE pose as its desired pose."""
@@ -701,7 +723,6 @@ class MultipandaRosBackend(RobotBackend):
         if result_future.done() and result_future.result() is not None:
             res = result_future.result().result
             ok = bool(getattr(res, "success", True))
-        print(f"[gripper] {label} -> width={goal.width:.3f} success={ok}", flush=True)
         return ok
 
     def open_gripper_blocking(self, attempts: int = 3) -> bool:

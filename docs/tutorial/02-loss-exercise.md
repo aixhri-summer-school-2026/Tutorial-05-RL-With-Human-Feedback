@@ -38,7 +38,7 @@ Where:
 
 ### 2. Continuous Loss: Action Prediction
 
-When the human does intervene (ν = 1), the mental model predicts the human's action. This is modeled as a Gaussian distribution.
+When the human does intervene (ν = 1), the **policy π_θ** is trained to predict the human's action. (The paper writes this term as `J₂(θ) = NLL(π_θ(a_h|S))` — note it depends only on the policy parameters θ, not the mental model.) The action is modeled as a Gaussian distribution; the `mu`/`log_std` you receive come from the policy's action head.
 
 **Formula:**
 ```
@@ -113,7 +113,7 @@ If a test fails, read the error message carefully — it usually points to a spe
 
 ## The Answer Key
 
-If your implementation is incomplete or incorrect when you run `make tutorial-metaworld` or `make tutorial-collect-train`, the training script will detect this and **silently apply the reference solution** from `mile_franka/tutorial/_loss_solution.py`.
+If your implementation is incomplete or incorrect when you run `make tutorial-metaworld` or `make tutorial-collect-train`, the training script will detect this, print `[tutorial] your loss is missing/incorrect — applying the answer key so you can train.`, and **apply the reference solution** from `mile_franka/tutorial/_loss_solution.py`.
 
 This means you never have to manually patch your code — the training harness handles it. However, **we encourage you to complete the implementation yourself** so you understand the loss before moving forward.
 
@@ -172,7 +172,7 @@ The `device` variable is already defined at the module level.
 ## Next Steps
 
 Once all three tests pass:
-1. Commit your work (see main tutorial document for commit instructions)
-2. Move on to **Task G4** (or the next task in your schedule)
+1. Commit your work (optional; the trained model saves automatically)
+2. Move on to **[03-walkthrough.md — MetaWorld](03-walkthrough.md)** to watch your loss train a policy
 
 If you get stuck or are short on time, no worries — the answer key will apply when you train, and you can learn by reviewing `mile_franka/tutorial/_loss_solution.py` afterward.

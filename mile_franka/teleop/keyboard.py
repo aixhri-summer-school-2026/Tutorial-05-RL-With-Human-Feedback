@@ -2,17 +2,42 @@
 
 Mirrors JoystickDevice (segment-toggle intervention, gripper toggle, injectable
 reader) so TeleopIntervener and the collector work unchanged. The reader returns a
-snapshot whose `.keys` is the set of currently-pressed key names. The default reader
-lazily imports pygame (already in the image) and opens a small focus window.
+snapshot whose `.keys` is the set of currently-pressed key names. The default
+("pygame") reader opens a small focus-grabbing window: only that window's keys reach the
+robot, so the MuJoCo viewer's overlapping bindings never fire while it is focused. An
+opt-in "global" backend (pynput) captures keys OS-wide so no window needs focus, but the
+focused MuJoCo viewer then *also* receives them (e.g. space pauses the sim) — acceptable
+only if you keep the terminal focused, never the viewer.
 """
 from __future__ import annotations
 
+import threading
 import time
 from typing import Callable, Iterable, Optional
 
 import numpy as np
 
 from mile_franka.teleop.base import TeleopDevice, TeleopReading
+
+# Internal key names this device understands. Movement/gripper keys are single chars;
+# the rest are edge-triggered control keys.
+_CHAR_KEYS = frozenset({"w", "s", "a", "d", "q", "e", "g"})
+# pynput Key enum members expose a `.name`; map the ones we care about to our names.
+_SPECIAL_KEYS = {"space": "space", "enter": "enter", "backspace": "backspace"}
+
+
+def _pynput_key_name(key) -> Optional[str]:
+    """Map a pynput key event to this device's internal key name, or None if unmapped.
+
+    Duck-typed (reads only `.char` / `.name`) so it needs no pynput import. Character
+    keys (KeyCode) carry `.char`; special keys (Key enum) carry `.name`.
+    """
+    char = getattr(key, "char", None)
+    if char is not None:
+        c = char.lower()
+        return c if c in _CHAR_KEYS else None
+    name = getattr(key, "name", None)
+    return _SPECIAL_KEYS.get(name) if name is not None else None
 
 
 class KeyboardDevice(TeleopDevice):
@@ -33,7 +58,8 @@ class KeyboardDevice(TeleopDevice):
                  done_key: str = "enter", discard_key: str = "backspace",
                  segment_mode: bool = True, gripper_toggle: bool = True,
                  hold_confirm_s: float = 0.0, debounce_s: float = 0.2,
-                 reader: Optional[Callable[[], object]] = None):
+                 reader: Optional[Callable[[], object]] = None,
+                 reader_backend: str = "pygame"):
         self.translation_scale = translation_scale
         self.key_xplus, self.key_xminus = key_xplus, key_xminus
         self.key_yplus, self.key_yminus = key_yplus, key_yminus
@@ -50,7 +76,8 @@ class KeyboardDevice(TeleopDevice):
         self._press_start: dict = {}
         self._triggered_this_press: dict = {}
         self._last_trigger: dict = {}
-        self._reader = reader if reader is not None else self._default_reader()
+        self.reader_backend = reader_backend
+        self._reader = reader if reader is not None else self._default_reader(reader_backend)
 
     def reset(self) -> None:
         self._in_segment = False
@@ -58,8 +85,55 @@ class KeyboardDevice(TeleopDevice):
     def sync_gripper_state(self, closed: bool) -> None:
         self._gripper_state = 1.0 if closed else -1.0
 
+    @classmethod
+    def _default_reader(cls, backend: str = "global") -> Callable[[], object]:
+        if backend == "global":
+            return cls._global_reader()
+        if backend == "pygame":
+            return cls._pygame_reader()
+        raise ValueError(
+            f"unknown reader_backend {backend!r}; expected 'global' or 'pygame'")
+
     @staticmethod
-    def _default_reader() -> Callable[[], object]:
+    def _global_reader() -> Callable[[], object]:
+        """Window-focus-independent reader: a background pynput listener tracks which
+        keys are currently held, OS-wide. Lets the user watch the MuJoCo viewer (or keep
+        the terminal focused) instead of hunting for a teleop window. pynput's X backend
+        is imported lazily because it requires a live DISPLAY."""
+        from pynput import keyboard as _kb
+
+        held: set = set()
+        lock = threading.Lock()
+
+        def _on_press(key):
+            name = _pynput_key_name(key)
+            if name is not None:
+                with lock:
+                    held.add(name)
+
+        def _on_release(key):
+            name = _pynput_key_name(key)
+            if name is not None:
+                with lock:
+                    held.discard(name)
+
+        listener = _kb.Listener(on_press=_on_press, on_release=_on_release)
+        listener.daemon = True
+        listener.start()
+
+        class _Snapshot:
+            __slots__ = ("keys",)
+
+        def _read() -> object:
+            snap = _Snapshot()
+            with lock:
+                snap.keys = set(held)
+            return snap
+
+        return _read
+
+    @staticmethod
+    def _pygame_reader() -> Callable[[], object]:
         import pygame  # lazy: only needed for live use
 
         pygame.init()

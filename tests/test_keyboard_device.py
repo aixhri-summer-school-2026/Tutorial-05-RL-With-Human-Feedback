@@ -1,5 +1,37 @@
 import numpy as np
-from mile_franka.teleop.keyboard import KeyboardDevice
+from mile_franka.teleop.keyboard import KeyboardDevice, _pynput_key_name
+
+
+class _Char:
+    """Duck-typed stand-in for pynput KeyCode (has .char, no .name)."""
+    def __init__(self, char):
+        self.char = char
+        self.name = None
+
+
+class _Special:
+    """Duck-typed stand-in for a pynput Key enum member (has .name, .char is None)."""
+    def __init__(self, name):
+        self.char = None
+        self.name = name
+
+
+def test_pynput_maps_movement_chars_case_insensitively():
+    for c in ("w", "s", "a", "d", "q", "e", "g"):
+        assert _pynput_key_name(_Char(c)) == c
+        assert _pynput_key_name(_Char(c.upper())) == c
+
+
+def test_pynput_maps_special_keys_by_name():
+    assert _pynput_key_name(_Special("space")) == "space"
+    assert _pynput_key_name(_Special("enter")) == "enter"
+    assert _pynput_key_name(_Special("backspace")) == "backspace"
+
+
+def test_pynput_ignores_unmapped_keys():
+    assert _pynput_key_name(_Char("z")) is None
+    assert _pynput_key_name(_Char(None)) is None
+    assert _pynput_key_name(_Special("ctrl")) is None
 
 
 def _dev(keys_seq):

@@ -1,4 +1,4 @@
-# Tutorial Tier 3 — Franka sim, keyboard teleop (make tutorial-collect-train)
+# Tutorial Part 3 — Franka sim, keyboard teleop (make tutorial-collect-train)
 # Participant collects 2 episodes with keyboard then trains for 1 round.
 # Scaled-down version of franka_sim.yaml: 1 round, 100 epochs, keyboard instead of joystick.
 

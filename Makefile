@@ -17,15 +17,14 @@ ROBOT_IP      ?= 169.254.202.10
 LOAD_GRIPPER  ?= true
 FRANKA_SRC    := source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-# Interactive tutorial targets (tutorial-metaworld, tutorial-collect-train, tutorial-fake,
-# tutorial-teleop) use bare commands — no docker exec — because they need keyboard/stdin.
-# They must be run from inside `make shell`. The guard below enforces this.
+# tutorial-teleop and tutorial-collect-train need keyboard/stdin (pygame window,
+# keyboard intervener) and must be run from inside `make shell`. The guard below enforces this.
 CONTAINER_GUARD = @test -d /home/user/mile-code || { echo "ERROR: Run 'make shell' first, then run this command inside the container."; exit 1; }
 
 .PHONY: \
   build up down shell \
   tutorial-check tutorial-check-loss \
-  tutorial-metaworld \
+  tutorial-metaworld eval-metaworld \
   tutorial-fake \
   sim-up sim-gui tutorial-teleop eval-base tutorial-collect-train eval-mile \
   franka-up apriltag-up eval-real \
@@ -45,8 +44,8 @@ up:                          ## start the persistent sim container
 down:                        ## stop the container
 	$(DC) down
 
-shell:                       ## open an interactive shell inside the container (env sourced, cd'd into repo)
-	$(DC) exec sim bash -lc '$(ENVSH) && exec bash'
+shell:                       ## open an interactive shell inside the container (env sourced, cd'd into repo; host display passed for pygame teleop)
+	$(DC) exec -e DISPLAY=$$DISPLAY sim bash -lc '$(ENVSH) && exec bash'
 
 # ── Tutorial: setup checks ────────────────────────────────────────────────────
 # Callable from the host or from inside make shell.
@@ -61,15 +60,19 @@ tutorial-check-loss:         ## run tests for the MILE-loss exercise
 # Interactive (needs stdin for training output). Run from inside make shell.
 
 tutorial-metaworld:          ## Part 1: MetaWorld peg-insert synthetic loop (uses your loss)
-	$(CONTAINER_GUARD)
-	cd scripts && python3 tutorial_train.py --config ../config/tutorial_metaworld.yaml
+	$(call RUN,cd scripts && python3 tutorial_train.py --config ../config/tutorial_metaworld.yaml)
+
+eval-metaworld:              ## Part 1: evaluate a trained MILE policy on MetaWorld; override MODEL=path/to/dir EPISODES=100
+	$(call RUN,python3 scripts/eval_mile.py \
+	  --trained_model $${MODEL:-output_dir} \
+	  --num_episodes $${EPISODES:-100} \
+	  --video_dir output_dir/metaworld_eval_videos_$(TS))
 
 # ── Tutorial: Part 2 — Franka fake backend ────────────────────────────────────
 # Interactive. Run from inside make shell.
 
 tutorial-fake:               ## Part 2: smoke-test that the Franka environment loads correctly
-	$(CONTAINER_GUARD)
-	python3 scripts/smoke_franka_env.py
+	$(call RUN,python3 scripts/smoke_franka_env.py)
 
 # ── Tutorial: Part 3 — Franka sim ─────────────────────────────────────────────
 # sim-up / sim-gui / eval-base / eval-mile use $(call RUN,...) — callable from host.

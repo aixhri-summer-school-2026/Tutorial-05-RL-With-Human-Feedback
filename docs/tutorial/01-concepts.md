@@ -35,15 +35,15 @@ For example:
 
 A lower cost means the robot asks for help sooner. A higher cost means the robot tries harder before asking. This lets you tune the method to match how humans *actually* intervene.
 
-## Joint training: the policy π_θ and mental model π̃_ξ
+## Joint training: the policy π_θ and mental model π̂_ξ
 
 MILE trains *two* neural networks together, not just one:
 
-1. **The policy π_θ** — this is what the robot executes. It takes the current observation and outputs an action. This is what you care about at test time.
+1. **The policy π_θ** — this is what the robot executes. It takes the current observation and outputs an action. This is what you care about at test time. It's also the network that learns to *imitate your intervention actions* (see Part 2 of the loss below).
 
-2. **The mental model π̃_ξ** — this is what the robot thinks *you* (the human) believe it will do. It's the robot's model of your expectations. During training, it learns from the interventions you gave it. At test time, it helps the intervention model decide when to ask for help.
+2. **The mental model π̂_ξ** — this is the robot's estimate of what *you* (the human) believe the robot will do in a given state. It does **not** predict your action; instead it feeds the intervention model, which compares "what the human expects the robot to do" against "what the robot is actually planning" to decide when you'd step in.
 
-Why train them together? Because they constrain each other. If the policy starts doing something clearly wrong, the mental model (trained on your interventions) will flag it, and the policy gets corrected. If the robot and human actions align, they reinforce each other.
+Why train them together? They split the work of the loss. The policy π_θ is trained on your intervention actions (the action-prediction term). The mental model π̂_ξ is trained through the intervention-prediction term — it only shows up where MILE has to decide *whether* a human would intervene. At test time only π_θ runs; the mental model is discarded.
 
 ## The MILE loss: BCE + Gaussian NLL
 
@@ -59,12 +59,12 @@ For each step, we predict: "will the human intervene?" (a probability). We compa
 
 ### Part 2: Gaussian NLL on ν=1 steps (only when human intervened)
 
-This term asks: "when the human did intervene, did we predict the right action they'd take?"
+This term asks: "when the human did intervene, did the *policy* predict the right action they'd take?"
 
 - Ignore all ν=0 steps (the robot handled those).
-- For ν=1 steps, the human gave us their action. We model your action as a Gaussian (normal distribution) with mean μ and standard deviation σ.
-- We compute the log-likelihood: "how probable is the human's actual action under our Gaussian model?"
-- We minimize the *negative* log-likelihood (maximizing likelihood = minimizing loss).
+- For ν=1 steps, the human gave us their action. The **policy π_θ** outputs a Gaussian (normal distribution) over its action, with mean μ and standard deviation σ.
+- We compute the log-likelihood: "how probable is the human's actual action under the policy's Gaussian?"
+- We minimize the *negative* log-likelihood (maximizing likelihood = minimizing loss). This is the term that pushes π_θ to imitate your corrections.
 
 ### Putting them together
 
@@ -72,7 +72,9 @@ This term asks: "when the human did intervene, did we predict the right action t
 Total Loss = λ₁ × (Gaussian NLL) + λ₂ × (BCE on ν)
 ```
 
-The λ weights let you balance: "should we focus more on predicting when humans intervene, or on getting the right action once they do?" Usually, both matter equally, so λ₁ = λ₂ = 1.
+The λ weights let you balance: "should we focus more on predicting when humans intervene, or on getting the right action once they do?" Usually, both matter equally, so λ₁ = λ₂ = 1 (the default in this code).
+
+> **Paper notation:** The MILE paper writes this as a convex combination, `J(θ,ξ) = λ·J₁ + (1−λ)·J₂` with λ = 0.5, where J₁ is the intervention BCE and J₂ is the action NLL. Setting λ₁ = λ₂ = 1 is the same objective up to an overall factor of 2, so the gradients point the same way.
 
 ## The 4-part ladder: where MILE runs
 

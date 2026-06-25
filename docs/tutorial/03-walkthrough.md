@@ -51,7 +51,7 @@ Read **[01-concepts.md](01-concepts.md)** — it's the anchor for everything you
 
 ## Implement the Loss
 
-**Goal:** Write `mile_cont_loss_fn` — the loss used by all tiers.
+**Goal:** Write `mile_cont_loss_fn` — the loss used by all parts.
 
 **File to edit:** (from inside the container)
 ```bash
@@ -108,16 +108,20 @@ make tutorial-metaworld
 
 **What to expect:**
 
-The script prints training logs (one line per epoch) followed by a per-round success rate. Exact numbers vary by run (±0.2 is normal), but you should see the success rate **increase from Round 0 to Round 1**:
+The script prints verbose per-batch and per-epoch table logs, then a summary table at each evaluation checkpoint. Exact numbers vary by run (±0.2 is normal), but you should see the `success_rate` row **increase from Round 0 to Round 1**:
 
 ```
-Round 0: collecting…
-  training (50 epochs)…
-  success_rate: 0.10 → 0.30
-Round 1: collecting…
-  training (50 epochs)…
-  success_rate: 0.30 → 0.50
+Round: 0
+...
+| mile/                |       |
+|    success_rate      | 0.40  |
+Round: 1
+...
+| mile/                |       |
+|    success_rate      | 0.60  |
 ```
+
+If the loss is not yet implemented, you'll see: `[tutorial] your loss is missing/incorrect — applying the answer key so you can train.` — this is expected and training continues with the reference solution.
 
 If success does **not** increase at all, your loss may have a bug — re-run `make tutorial-check-loss`.
 
@@ -160,19 +164,20 @@ The observation/action dimensions you'll use in the sim:
 
 ### Step 1: Launch the headless simulator
 
-In the container, start the simulation in the background:
+From your **host machine** (not inside the container), start the simulation in the background:
 
 ```bash
 make sim-up
 ```
 
-Wait ~10 seconds for the sim to boot.
+Wait ~20 seconds for the sim to boot. (The first time is slower; subsequent restarts are faster.)
 
 ### Step 2: Open the viewer on the host
 
-On your **host machine** (laptop, not inside the container), open a terminal and run:
+On your **host machine** (laptop, not inside the container), allow X11 access (once per login) and open the viewer:
 
 ```bash
+xhost +local:root   # one-time, allows the container to draw on your display
 make sim-gui
 ```
 
@@ -185,13 +190,20 @@ A MuJoCo window opens. You'll see:
 
 ### Step 3: Learn the keyboard (free-play teleop)
 
-**Inside the container**, run:
+**Inside `make shell`** (the container — open a new terminal tab), run:
 
 ```bash
 make tutorial-teleop
 ```
 
-This launches a free-play mode where you can experiment with the keyboard. Refer to **[04-teleop.md](04-teleop.md)** for the full key map, but here's the cheat sheet:
+This opens **two windows**:
+
+- **MuJoCo viewer** (large 3D window, from Step 2): shows the robot. Watch this to see the arm move. **Do not type here.**
+- **Teleop window** (small black pygame window labeled "MILE keyboard teleop"): the keyboard input receiver. **Click this window before pressing any keys.**
+
+> ⚠️ **Critical:** The MuJoCo viewer has its own key bindings that overlap with the teleop keys — `w`=wireframe, `a`=axis display, `q`=visualization toggle, **`space`=pause simulation**, etc. Only the focused window receives keystrokes, so if the MuJoCo window is focused when you press these keys, the simulation will toggle visualization modes or pause instead of moving the robot. Always click the small **teleop window** first.
+
+Refer to **[04-teleop.md](04-teleop.md)** for the full key map, but here's the cheat sheet:
 
 | Key | Action |
 |---|---|
@@ -250,7 +262,7 @@ BASE POLICY SIM SUCCESS RATE = 0.60 (3/5); mean steps=585
 
 ### Step 2: Collect interventions with keyboard teleop
 
-Run the combined collect-and-train command:
+Inside **`make shell`**, run the combined collect-and-train command:
 
 ```bash
 make tutorial-collect-train
@@ -291,6 +303,8 @@ episode 4: success=1 steps=310
 
 BASE POLICY SIM SUCCESS RATE = 0.80 (4/5); mean steps=353
 ```
+
+> **Note:** The label "BASE POLICY SIM SUCCESS RATE" appears regardless of which policy is evaluated — it's the script's fixed output format. Here it's showing the MILE-trained policy's rate.
 
 **Record the after-score.** In this example, it's **0.80**.
 
@@ -418,7 +432,7 @@ If still stuck, fall back to headless (skip sim-gui, proceed directly to eval-ba
 
 ### Keyboard doesn't respond in sim-gui
 
-Press Escape to focus the window, then try again. If the sim is running (verify with `ros2 topic list | grep sim`), the teleop should work.
+Click the small "MILE keyboard teleop" window to focus it (only the focused window receives keys), then try again. If the sim is running (verify with `ros2 topic list | grep sim`), the teleop should work.
 
 ### "make tutorial-collect-train" hangs at "waiting for policy…"
 

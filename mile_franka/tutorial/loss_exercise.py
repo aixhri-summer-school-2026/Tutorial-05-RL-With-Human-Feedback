@@ -32,20 +32,17 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 def mile_cont_loss_fn(intervention_prob, mu, log_std, ground_truth_action,
                       ground_truth_intervention, LAMBDA1=1.0, LAMBDA2=1.0,
                       reduction="mean"):
-    # Discrete loss: NLL of the intervention head
-    pred_probs = torch.clamp(intervention_prob, 1e-7, 1 - 1e-7)
-    discrete_loss = F.nll_loss(torch.log(pred_probs), ground_truth_intervention,
-                               reduction=reduction)
+    # TODO: Step 1 — compute discrete_loss (NLL of intervention head)
+    # Hint: clamp intervention_prob to [1e-7, 1-1e-7], take log, call F.nll_loss
 
-    # Continuous loss: Gaussian NLL on ν=1 steps only
-    idx = torch.logical_and(ground_truth_intervention == 1,
-                            intervention_prob[:, -1] > 0.0)
-    if idx.sum() == 0:
-        continuous_loss = torch.tensor(0.0).to(device)
-    else:
-        dist = D.Normal(mu[idx], log_std[idx].exp())
-        log_prob = sum_independent_dims(dist.log_prob(ground_truth_action[idx]))
-        continuous_loss = -log_prob.mean()
+    # TODO: Step 2 — compute continuous_loss (Gaussian NLL on nu==1 steps only)
+    # Hint: build a boolean mask idx for rows where ground_truth_intervention==1
+    #       AND intervention_prob[:, -1] > 0.
+    #       If idx.sum()==0, set continuous_loss = torch.tensor(0.0).to(device).
+    #       Otherwise: Normal(mu[idx], log_std[idx].exp()), log_prob, sum_independent_dims, negative mean.
 
-    loss = LAMBDA1 * continuous_loss + LAMBDA2 * discrete_loss
-    return loss, continuous_loss, discrete_loss
+    # TODO: Step 3 — combine: loss = LAMBDA1 * continuous_loss + LAMBDA2 * discrete_loss
+
+    raise NotImplementedError(
+        "Implement mile_cont_loss_fn — see 02-loss-exercise.md for details."
+    )

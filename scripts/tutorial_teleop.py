@@ -8,7 +8,9 @@ Controls:
   SPACE = toggle intervention segment   G = toggle gripper
   ENTER = end episode   BACKSPACE = discard episode   Ctrl-C = quit
 
-The small pygame window must stay focused for key input to register — click it.
+Click the small "MILE keyboard teleop" window to focus it before pressing keys. Only the
+focused window receives input, so keeping that window focused (not the MuJoCo viewer)
+keeps the viewer's overlapping bindings — w=wireframe, space=pause, etc. — from firing.
 """
 import sys
 
@@ -24,13 +26,14 @@ def main():
     register_franka_envs()
     franka_env: FrankaEnv = gym.make("Franka-Stack-Sim-v0")  # type: ignore[assignment]
     env = make_franka_env(franka_env)
-    device = KeyboardDevice(translation_scale=0.02)
+    device = KeyboardDevice(translation_scale=0.1)
 
     print("=" * 60)
     print("Free-play teleop — practice mode (data NOT saved)")
-    print("Click the pygame window to focus it, then use:")
+    print("Click the 'MILE keyboard teleop' window to focus it, then use:")
     print("  W/S=±X  A/D=±Y  Q/E=±Z  SPACE=clutch  G=gripper")
     print("  ENTER=end episode  BACKSPACE=discard  Ctrl-C=quit")
+    print("(Keep that window focused, NOT the MuJoCo viewer — its keys would fire instead.)")
     print("=" * 60)
 
     config = getattr(getattr(env, "unwrapped", env), "config", None)

@@ -111,6 +111,24 @@ make tutorial-collect-train
 
 ---
 
+### ❌ `eval-base` or `eval-mile` crashes with `failed to reset bottom_cube`
+
+**Problem:** After a previous run was interrupted (Ctrl-C, timeout, or crash), the sim objects are in inconsistent positions. You see:
+```
+RuntimeError: failed to reset bottom_cube near [...]; last pose was [...]
+```
+
+**Fix:** Restart the simulator:
+```bash
+make sim-up
+# Wait ~10 seconds, then retry:
+make eval-base
+```
+
+**Why:** When a prior run is aborted mid-episode, the MuJoCo sim objects (cubes) stay where they landed. On the next reset, the backend tries to move them back to start positions but the physics doesn't converge fast enough. A fresh `make sim-up` restores a clean state.
+
+---
+
 ### ❌ MetaWorld import fails with `ModuleNotFoundError`
 
 **Problem:** You see:
@@ -147,9 +165,41 @@ pip install -r requirements.txt
 
 ## Teleop & Keyboard Control
 
+### ❌ Keys rotate the MuJoCo camera instead of moving the robot
+
+**Problem:** You press W, A, S, D, etc. and the MuJoCo 3D view pans/rotates instead of the robot moving. The arm doesn't respond.
+
+**Why:** MuJoCo viewer (`make sim-gui`) has its own key bindings for camera control (w=wireframe, a=axis, q/e=camera rotation, etc.) that overlap with the teleop keys. Only the focused window receives keystrokes, so if the MuJoCo window is focused it captures your keypresses instead of the teleop code.
+
+**Fix:** Click the small **"MILE keyboard teleop"** pygame window (not the MuJoCo viewer) to give it keyboard focus. The teleop window is a small black/grey window labeled "MILE keyboard teleop — keep focused". After clicking it, your keys will reach the robot.
+
+**If you can't find the teleop window:** It should have appeared when you ran `make tutorial-teleop` (or `make tutorial-collect-train`). If you can't see it, check:
+- Did you run `xhost +local:root` on the host before `make shell`? (Required once per login)
+- Is the window minimized or behind other windows?
+
+---
+
+### ❌ `make tutorial-teleop` or `make tutorial-collect-train` freezes (no output)
+
+**Problem:** After printing `python3 scripts/tutorial_teleop.py`, nothing appears for a long time before the windows show up.
+
+**Why:** This is expected — startup takes **~90 seconds**, and it is all ROS bringup, not the teleop code. Connecting to the sim (`gym.make`) waits for `controller_manager` to become responsive (up to 60 s on a cold boot) and then applies the controller gains via several `ros2 param set` calls. Each runs as a daemonless CLI subprocess that pays ~5 s of DDS discovery, so a handful of gains adds ~30 s. The teleop/keyboard layer itself adds well under a second. Nothing is frozen — wait it out.
+
+**Fix:**
+1. Wait 20+ seconds after `make sim-up` before running teleop, then allow ~90 s for the connection to complete.
+2. If it's been more than ~2 minutes and nothing appeared, restart the sim:
+   ```bash
+   # On the host (not inside make shell):
+   make sim-up
+   # Wait 20 seconds, then retry inside make shell:
+   make tutorial-teleop
+   ```
+
+---
+
 ### ❌ Keyboard input is ignored during `make tutorial-collect-train`
 
-**Problem:** You press W, A, S, D, Space, G, etc., but the robot doesn't move.
+**Problem:** You press W, A, S, D, Space, G, etc., but the robot doesn't move (and the MuJoCo camera isn't moving either — confirming the teleop window is focused but keys aren't reaching the robot).
 
 **Fix:** Click the "MILE keyboard teleop" pygame window to focus it:
 ```bash
@@ -181,13 +231,14 @@ Error response from daemon: pull access denied for hucebot/multipanda_ros2
 **Fix:** The base image isn't on Docker Hub—you must build it locally:
 
 ```bash
-# Clone hucebot/multipanda_ros2 locally:
-git clone https://github.com/hucebot/multipanda_ros2 ~/multipanda_ros2
-cd ~/multipanda_ros2
-docker build -t hucebot:franka-humble .  # Takes 10–15 min
+# Clone hucebot/multipanda_ros2 locally (in a sibling directory):
+cd ..
+git clone https://github.com/hucebot/multipanda_ros2
+cd multipanda_ros2
+docker compose build  # Takes 10–15 min
 
-# Now return to the tutorial repo and rebuild:
-cd ~/mile-franka-tutorial
+# Return to the tutorial repo and rebuild:
+cd ../mile-franka-tutorial
 docker compose build
 ```
 
@@ -241,7 +292,7 @@ If a `make` target seems to hang, check these:
 If you can't find your issue here:
 
 1. **Check the terminal output** — look for the first error message, not just the last line.
-2. **Search the docs** — `docs/tutorial/` has detailed guides for each tier.
+2. **Search the docs** — `docs/tutorial/` has detailed guides for each part.
 3. **Ask the instructors** — describe:
    - What you ran (the command)
    - What you expected
