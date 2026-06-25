@@ -11,10 +11,16 @@ logs/
 .vscode/
 *bak
 
-# Generated artifacts (models, datasets, run outputs)
+# Generated artifacts (datasets, run outputs — models are committed under trained_models/)
 output_dir/
-trained_models/
 trained_models.zip
+trained_models/*
+!trained_models/initial_policy
+!trained_models/expert_policy
+!trained_models/gt_mental_model
+!trained_models/warm_started_mental_model
+!trained_models/franka/
+!trained_models/franka/base_policy
 MUJOCO_LOG.TXT
 config/camera_calib.yaml
 

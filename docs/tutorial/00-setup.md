@@ -115,28 +115,25 @@ The `mile_sim` container is now running and ready to accept commands.
 
 ---
 
-## Step 6: Download tutorial artifacts (homework, ∼1 min)
+## Step 6: Verify artifacts are present
 
-The artifacts (pretrained MetaWorld policies and the Franka base policy) are distributed via the GitHub Release, not Google Drive. Download and verify them:
+The pretrained models (MetaWorld policies and the Franka base policy) are **included in the repository** under `trained_models/`. No download is needed.
+
+Verify they're on disk:
 
 ```bash
-make fetch-artifacts
+ls trained_models/initial_policy trained_models/expert_policy \
+   trained_models/gt_mental_model trained_models/warm_started_mental_model \
+   trained_models/franka/base_policy
 ```
 
-**Expected output:**
-```
-downloading https://github.com/rayray2002/mile-franka-tutorial/releases/latest/download/tutorial-artifacts.tar
-checksum ok; unpacking…
-artifacts ready under trained_models/
-```
-
-If the download fails (network issue), the artifact file is also available on a USB stick or LAN mirror at the venue.
+All five files should be listed. If any are missing, re-clone the repository.
 
 ---
 
-## Step 7: Run the readiness check
+## Step 7: Run the readiness check (in container)
 
-Verify that all imports work and artifacts are in place:
+Verify that all imports work and artifacts are in place. This check runs **inside the container** (the dependencies aren't installed on your host):
 
 ```bash
 make tutorial-check
@@ -183,18 +180,6 @@ exit
 
 ---
 
-## For weaker laptops: pair up
-
-**Don't have a GPU or disk space?** No problem — two RTX 5090 towers are available at the venue:
-
-1. Pair up with someone who has a more powerful machine.
-2. You and your partner can take turns running the experiments, or run them together on a tower.
-3. The tutorial flow is identical; the only difference is compute speed (longer wait times for MILE training).
-
-**At the venue:** ask an instructor for tower credentials. Setup on the tower is identical to these steps (clone repo, `make build`, `make up`, etc.) — the towers already have the base image built, so your `make build` will be fast.
-
----
-
 ## Troubleshooting
 
 ### `nvidia-smi` not found or driver not installed
@@ -232,13 +217,6 @@ Common issues:
 2. **Internet dropout:** resume by re-running `make build` (it caches layers).
 3. **Old docker daemon:** update: `sudo apt-get install -y docker.io docker-compose-plugin`.
 
-### `make fetch-artifacts` fails
-
-If you see a checksum error or can't reach GitHub:
-
-1. Try again (network glitch).
-2. At the venue, ask an instructor — they have the artifacts on USB or LAN.
-
 ### `tutorial-check` shows `import metaworld: FAIL`
 
 Likely a container issue. Try:
@@ -253,7 +231,7 @@ If it persists, check `docker logs mile_sim` for errors.
 
 ### `tutorial-check` shows missing artifacts
 
-Run `make fetch-artifacts` again and verify it printed `artifacts ready under trained_models/`.
+If `trained_models/` files are missing, re-clone the repository — the models are committed in-tree.
 
 ---
 
@@ -275,29 +253,11 @@ After setup, you have:
 
 ---
 
-## Before you arrive at the venue
+## Before you arrive
 
 1. ✅ Check that `make tutorial-check` succeeds.
 2. ✅ Confirm `make shell` works (optional, but good to know).
 3. ✅ Bring your laptop, power cord, and ethernet cable if possible.
+4. ✅ Verify `trained_models/` contains all 5 model files (Step 6).
 
 **If anything is unclear or fails,** contact the instructor **before the session** — don't wait to debug at the venue.
-
----
-
-## What happens next?
-
-When you arrive:
-
-1. **0:00–0:05** Instructors verify all laptops pass `make tutorial-check`.
-2. **0:05–0:35** Tier 1 + 2: watch MILE on MetaWorld and Franka fake backend.
-3. **0:35–1:35** Tier 3: **you code + teleop** — implement the MILE loss, collect your own interventions with a keyboard, train on your data, eval before/after.
-4. **1:35–2:00** Tier 4: rotate through the **real FR3** (shared station, same code as Tier 3).
-
-That's it! Enjoy the tutorial.
-
----
-
-## Questions?
-
-Check the [troubleshooting](#troubleshooting) section above. If stuck, reach out to an instructor or file an issue on the [GitHub repo](https://github.com/rayray2002/mile-franka-tutorial).

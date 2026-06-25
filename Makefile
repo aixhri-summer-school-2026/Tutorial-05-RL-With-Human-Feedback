@@ -129,11 +129,12 @@ view-twin:                   ## live MuJoCo digital twin of the real workspace o
 	fi; \
 	$(DC) exec -e DISPLAY=$$TWIN_DISPLAY -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} sim bash -lc '$(ENVSH) && python3 scripts/view_cubes_mujoco.py'
 
-fetch-artifacts:             ## download + verify the tutorial artifacts bundle (homework; not Drive)
-	python3 scripts/fetch_artifacts.py
+fetch-artifacts:             ## trained models are in the repo; no download needed
+	@echo "Trained models are included in the repository (trained_models/). No download needed."
+	@ls -l trained_models/initial_policy trained_models/expert_policy trained_models/gt_mental_model trained_models/warm_started_mental_model trained_models/franka/base_policy
 
-tutorial-check:              ## assert imports + artifacts are present (run at home and at 0:05)
-	python3 scripts/tutorial_check.py
+tutorial-check:              ## assert imports + artifacts are present (run in container)
+	$(call RUN,python3 scripts/tutorial_check.py)
 
 tutorial-check-loss:         ## green-light test for the MILE-loss exercise
 	python3 -m pytest tests/test_loss_exercise.py -v

@@ -24,7 +24,7 @@ def main():
         print(f"  artifact {rel}: {'OK' if p.exists() else 'MISSING'}")
         ok = ok and p.exists()
     if not ok:
-        sys.exit("tutorial-check FAILED — see above (run `make fetch-artifacts` for artifacts).")
+        sys.exit("tutorial-check FAILED — trained_models/ should be in the repo; re-clone if missing.")
     print("tutorial-check OK — you're ready.")
 
 

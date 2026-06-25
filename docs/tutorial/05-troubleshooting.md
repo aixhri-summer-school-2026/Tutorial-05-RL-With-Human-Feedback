@@ -69,21 +69,21 @@ make sim-gui
 
 ## Artifact & Data Issues
 
-### ❌ Checksum mismatch for tutorial artifacts
+### ❌ `trained_models/` files missing
 
-**Problem:** You see:
-```
-ERROR: tutorial-artifacts.sha256 checksum mismatch
-```
+**Problem:** `make tutorial-check` shows `MISSING` for some artifact files.
 
-**Fix:** Re-download the artifacts:
+**Fix:** The pretrained models are committed in the repository. Re-clone or check your git state:
 ```bash
-make fetch-artifacts
+git status trained_models/
 ```
 
-**Why:** The artifact file may have been corrupted during download or is outdated. This re-fetches and validates it.
+If files are missing, pull the latest:
+```bash
+git checkout trained_models/
+```
 
-**Venue fallback:** If the download is slow or fails at the venue, instructors can provide the artifacts on USB. Copy to `artifacts/` and run `make fetch-artifacts` to validate.
+**Why:** The MetaWorld and Franka models are stored in the repo (not downloaded separately). If they're missing, your local clone may be out of date or the files were accidentally deleted.
 
 ---
 
