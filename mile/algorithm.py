@@ -28,13 +28,15 @@ rand = np.random.randint(0, 1000)
 
 
 def _make_render_env(env_name: str):
-    """Return a MetaWorld env created with render_mode='rgb_array', or None."""
+    """Return a MetaWorld env with render_mode='rgb_array' and the corner camera, or None."""
     try:
         from metaworld.envs import ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE
         if env_name + '-goal-observable' in ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE:
             cls = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[env_name + '-goal-observable']
             renv = cls(render_mode='rgb_array')
             renv._freeze_rand_vec = False
+            renv.camera_name = 'corner'
+            renv.camera_id = None
             return renv
     except Exception:
         pass
@@ -42,12 +44,9 @@ def _make_render_env(env_name: str):
 
 
 def _save_video(frames: list, path: str, fps: int = 15) -> None:
-    import cv2
-    h, w = frames[0].shape[:2]
-    writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-    for frame in frames:
-        writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-    writer.release()
+    from moviepy import ImageSequenceClip
+    clip = ImageSequenceClip(frames, fps=fps)
+    clip.write_videofile(path, codec='libx264', logger=None)
 
 
 def generate_rollout(agent: Union[SACPolicy, policies.ActorCriticPolicy, QNetwork],
