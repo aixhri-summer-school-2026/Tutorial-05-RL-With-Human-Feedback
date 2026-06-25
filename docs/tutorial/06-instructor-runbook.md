@@ -90,7 +90,7 @@ If you have a Vive:
 2. Verify `ros2 topic list | grep vive` shows hand tracking topics.
 3. Record the ROS topic names (handed pose) for the `ViveDevice` instantiation.
 
-**Later, at Tier 4:** If you wire the Vive, swap `"intervener": "keyboard"` → `"intervener": "vive"` in `config_tutorial_franka_real.json`. No other code changes needed.
+**Later, at Tier 4:** If you wire the Vive, swap `"intervener": "keyboard"` → `"intervener": "vive"` in `config/tutorial_franka_real.yaml`. No other code changes needed.
 
 ---
 
@@ -191,7 +191,7 @@ Tier 2 (fake backend) is a headless sanity check. If time is tight:
 
 ### Cut 2: Reduce episodes per round (saves ~3–5 minutes)
 
-Edit `config_tutorial_franka.json` (Tier 3):
+Edit `config/tutorial_franka.yaml` (Tier 3):
 
 ```json
 "experiment": {
@@ -210,7 +210,7 @@ This cuts data collection from 2 episodes to 1. The training still runs; partici
 
 ### Cut 3: Reduce training epochs (saves ~2–3 minutes)
 
-Edit `config_tutorial_franka.json`:
+Edit `config/tutorial_franka.yaml`:
 
 ```json
 "training": {
@@ -250,7 +250,7 @@ The real-robot station runs **in parallel**, not sequentially. Tier 4 does **not
    ```
 
 2. **Edit the config:**
-   Open `/home/ray/mile-franka-tutorial/config_tutorial_franka_real.json`:
+   Open `/home/ray/mile-franka-tutorial/config/tutorial_franka_real.yaml`:
    
    ```json
    {
@@ -278,7 +278,7 @@ The real-robot station runs **in parallel**, not sequentially. Tier 4 does **not
 
 ### Switching back to keyboard
 
-1. **Edit `config_tutorial_franka_real.json`:**
+1. **Edit `config/tutorial_franka_real.yaml`:**
    ```json
    "intervener": "keyboard"
    ```
@@ -388,11 +388,11 @@ These are the **instructor's verbal anchors** for each tier. Adapt to your audie
 
 Quickly reference these files if you need to adjust things on the fly:
 
-1. **`config_tutorial_franka.json`** (Tier 3, sim):
+1. **`config/tutorial_franka.yaml`** (Tier 3, sim):
    - `episodes_per_round`, `num_epochs`: reduce if running long.
    - `intervener`: `keyboard` (default) or `joystick` or `vive` (if wired).
 
-2. **`config_tutorial_franka_real.json`** (Tier 4, real):
+2. **`config/tutorial_franka_real.yaml`** (Tier 4, real):
    - `intervener`: same as above. Swap to `vive` if you wire the headset.
    - `rollout.auto_eval`: set to `false` (never auto-eval the policy on real hardware).
 

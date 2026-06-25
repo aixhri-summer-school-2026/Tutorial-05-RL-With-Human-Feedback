@@ -98,4 +98,4 @@ The system jointly trains two networks and deploys only the policy:
 - **`mile_franka/`** — Franka adaptation: `FrankaEnv`, `RobotBackend` ABC, `AprilTagPoseSource`, `KeyboardDevice` / `JoystickDevice`, `Collector`, tutorial scaffolding.
 - **`scripts/train_mile.py`** — offline and iterative training modes. `scripts/tutorial_train.py` injects the participant's loss before training.
 
-Config files: `config/franka.json` (sim, joystick), `config/franka_real.json` (real FR3), `config/tutorial_metaworld.json` (Tier 1), `config/tutorial_franka.json` (Tier 3).
+Config files: `config/franka_sim.yaml` (sim, joystick), `config/franka_real.yaml` (real FR3), `config/tutorial_metaworld.yaml` (Tier 1), `config/tutorial_franka.yaml` (Tier 3).

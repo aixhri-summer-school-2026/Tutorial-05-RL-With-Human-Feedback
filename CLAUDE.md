@@ -42,7 +42,7 @@ Pretrained models for the Peg-Insert reproduction: `gdown 1bzKGyOmX1ZCmAWnZiq_sA
 ```bash
 # --- Upstream MILE on MetaWorld ---
 # Train (offline or iterative — selected by config["experiment"]["mode"])
-python scripts/train_mile.py --config config/metaworld.json
+python scripts/train_mile.py --config config/metaworld.yaml
 
 # Evaluate a trained model
 python scripts/eval_mile.py --trained_model <dir> --num_episodes 100
@@ -58,7 +58,7 @@ make sim-up                   # launch the multipanda MuJoCo stacking sim headle
 make collect-mediocre         # MEDIOCRE rollouts -> sim_demos_mediocre.npz (feeds the base policy)
 make collect-expert           # PERFECT successful-only rollouts -> sim_demos_expert.npz (reference)
 make base-policy              # BC-train the mediocre base policy from sim_demos_mediocre.npz
-make mile                     # iterative MILE run (config/franka.json, Franka-Stack-Sim-v0)
+make mile                     # iterative MILE run (config/franka_sim.yaml, Franka-Stack-Sim-v0)
 make shell                    # interactive in-container shell (env sourced)
 make joystick-check           # print live gamepad axes/buttons (sanity check)
 make pose-test                # run 20 pose-layer unit tests (no ROS/hardware needed)
@@ -68,17 +68,17 @@ make apriltag-up              # (in-container) launch D415 + apriltag_ros + cali
 make calibrate-camera         # (in-container) eye-to-hand calibration capture -> camera_calib.yaml
 make close-gripper            # (in-container) clamp the gripper (e.g. onto the calib board); GRIP_FORCE/CLOSE_WIDTH overridable
 make open-gripper             # (in-container) release the gripper; OPEN_WIDTH overridable
-make mile-real                # (in-container) iterative MILE on real FR3 (config/franka_real.json)
+make mile-real                # (in-container) iterative MILE on real FR3 (config/franka_real.yaml)
 make eval-real                # (in-container) policy eval on real FR3
 make view-twin                # (in-container, host display) read-only MuJoCo twin: cubes from AprilTag, arm from /joint_states; safe to run alongside mile-real/eval-real
 ```
 
-The `config/franka.json` targets `Franka-Stack-Sim-v0` and runs in-container via `make mile`
+The `config/franka_sim.yaml` targets `Franka-Stack-Sim-v0` and runs in-container via `make mile`
 against a live `make sim-up`: `mode: iterative`, `collector: real` + `intervener: joystick`
 (human-in-the-loop with an Xbox gamepad), `rollout.auto_eval: false`,
 `num_rounds: 5`, `episodes_per_round: 3`, `num_epochs: 500`. The fake env (`Franka-Stack-Fake-v0`)
-is retained only for import-level checks, not as a pipeline gate. `config/metaworld.json` /
-`config/franka.json` are the single source of run configuration (env, modes,
+is retained only for import-level checks, not as a pipeline gate. `config/metaworld.yaml` /
+`config/franka_sim.yaml` are the single source of run configuration (env, modes,
 policy/mental-model types and paths, logging, save, rollout, **`collector`**,
 **`intervener`**, **`rollout.auto_eval`**).
 
@@ -175,7 +175,7 @@ imports and the smoke scripts run with no ROS installed.
   `JoystickDevice` (`joystick.py`, pygame gamepad — **the default dev teleop device**, ν via a
   stateful clutch-toggle segment) and `SpaceMouseDevice` (`spacemouse.py`, kept as an alternative,
   ν = clutch-or-motion) — both use an injectable raw reader so they load/test without hardware.
-  Select via `intervener: joystick|spacemouse` in `config/franka.json` (currently `joystick`).
+  Select via `intervener: joystick|spacemouse` in `config/franka_sim.yaml` (currently `joystick`).
 - **`mile_franka/policies/`** — `ScriptedStackPolicy` (`scripted.py`, mediocre state machine
   over GT poses — reads `env.unwrapped.privileged_frame()`, not the reduced obs; per-episode
   randomizes transit/lift height U[0.10,0.25] and placement gap U[0.002,0.015]; pass the active

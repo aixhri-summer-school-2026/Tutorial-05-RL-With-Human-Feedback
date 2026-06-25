@@ -53,10 +53,12 @@ def prepare_dataset(dataset:dict, ratio:int=0.8):
         valid_set[key] = dataset[key][int(len(dataset['state'])*ratio):]
     return train_set, valid_set
 
-def read_config(file_path:str):
+def read_config(file_path: str):
     with open(file_path, 'r') as file:
-        config = json.load(file)
-    return config
+        if file_path.endswith(('.yaml', '.yml')):
+            import yaml
+            return yaml.safe_load(file)
+        return json.load(file)
 
 def log_to_file(sentence:str, filename:str):
     os.makedirs('logs', exist_ok=True)

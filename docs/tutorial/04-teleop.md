@@ -48,7 +48,7 @@ The keyboard is the default teleop device for the tutorial's sim and fake-world 
 
 ## Joystick / Xbox Gamepad (`intervener: joystick`)
 
-Xbox 360, Xbox One, and compatible gamepads work out of the box. Select this device in `config_franka.json`:
+Xbox 360, Xbox One, and compatible gamepads work out of the box. Select this device in `config/franka_sim.yaml`:
 
 ```json
 "experiment": {
@@ -79,7 +79,7 @@ Xbox 360, Xbox One, and compatible gamepads work out of the box. Select this dev
 
 ## Vive Wand (`intervener: vive`)
 
-The HTC Vive is available at the venue for Tier 4 (real-robot hardware). It provides hand-tracking and immersive control. Select this device in `config_franka_real.json`:
+The HTC Vive is available at the venue for Tier 4 (real-robot hardware). It provides hand-tracking and immersive control. Select this device in `config/franka_real.yaml`:
 
 ```json
 "experiment": {
@@ -138,7 +138,7 @@ At the end of an episode:
 
 ## Configuration: choosing your device
 
-In `config_franka.json` (for simulation) or `config_franka_real.json` (for hardware):
+In `config/franka_sim.yaml` (for simulation) or `config/franka_real.yaml` (for hardware):
 
 ```json
 "experiment": {

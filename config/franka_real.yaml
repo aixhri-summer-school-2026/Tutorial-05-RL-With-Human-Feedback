@@ -1,0 +1,49 @@
+# Franka block-stacking — real FR3, dev (make mile-real)
+# Requires: controller stack (make franka-up) + AprilTag camera (make apriltag-up).
+# Fewer epochs than franka_sim; real-robot resets are expensive.
+
+train:
+  num_epochs: 50
+  batch_size: 128
+  lr: 0.0001
+  lambda1: 1.0
+  lambda2: 1.0
+
+experiment:
+  name: mile-franka-real
+  mode: iterative
+  env_name: Franka-Stack-Real-v0
+
+  collector: real
+  intervener: joystick
+  joystick_translation_scale: 0.5
+
+  num_rounds: 5
+  episodes_per_round: 3
+  include_offline_dataset: false
+
+  policy_type: bc
+  policy_path: ../trained_models/franka/base_policy
+  mental_model_type: bc
+  use_warm_start: true
+  warm_start_path: ../trained_models/franka/base_policy
+
+  validate:
+    enabled: false
+    every_n_epochs: 100
+  logging:
+    terminal_output_to_txt: false
+    log_tb: false
+    log_wandb: false
+  save:
+    enabled: true
+    every_n_epochs: 0
+    on_best_validation: false
+    on_best_rollout_return: false
+    on_best_rollout_success_rate: false
+    outdir: ../output_dir/franka_real
+  rollout:
+    enabled: false       # never run policy autonomously on hardware
+    auto_eval: false
+    n_episodes: 0
+    every_n_epochs: 100

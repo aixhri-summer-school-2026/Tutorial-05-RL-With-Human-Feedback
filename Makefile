@@ -59,11 +59,11 @@ base-policy:                 ## BC-train the (mediocre) base policy offline; ove
 	  --demos $(DEMOS) --bc_batch_size 256 --bc_ent_weight 0.0 --eval_episodes 0 \
 	  --save_path trained_models/franka/base_policy)
 
-mile:                        ## iterative MILE run in sim (config/franka.json)
-	$(call RUN,cd scripts && python3 train_mile.py --config ../config/franka.json)
+mile:                        ## iterative MILE run in sim (config/franka_sim.yaml)
+	$(call RUN,cd scripts && python3 train_mile.py --config ../config/franka_sim.yaml)
 
 mile-real:                   ## iterative MILE run on the real Franka (needs controller + apriltag-up running). MILE_REAL_STACK=fr3|multipanda (default fr3). MILE_APPLY_SIM_GAINS=1 to track against the lab sim.
-	$(DC) exec -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} -e MILE_APPLY_SIM_GAINS sim bash -lc '$(ENVSH) && $(KILLCLIENTS); cd scripts && python3 train_mile.py --config ../config/franka_real.json'
+	$(DC) exec -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} -e MILE_APPLY_SIM_GAINS sim bash -lc '$(ENVSH) && $(KILLCLIENTS); cd scripts && python3 train_mile.py --config ../config/franka_real.yaml'
 
 spacemouse-check:            ## print live SpaceMouse deflection (sanity check; Ctrl-C to stop)
 	$(call RUN,python3 scripts/spacemouse_check.py)
@@ -139,10 +139,10 @@ tutorial-check-loss:         ## green-light test for the MILE-loss exercise
 	python3 -m pytest tests/test_loss_exercise.py -v
 
 tutorial-metaworld:          ## Tier 1: run the MetaWorld synthetic loop (uses your loss)
-	cd scripts && python3 tutorial_train.py --config ../config/tutorial_metaworld.json
+	cd scripts && python3 tutorial_train.py --config ../config/tutorial_metaworld.yaml
 
 tutorial-collect-train:      ## Tier 3: collect interventions (keyboard) + train (uses your loss)
-	cd scripts && python3 tutorial_train.py --config ../config/tutorial_franka.json
+	cd scripts && python3 tutorial_train.py --config ../config/tutorial_franka.yaml
 
 tutorial-fake:               ## Tier 2: run the mediocre base policy on the fake backend
 	python3 scripts/smoke_franka_env.py
