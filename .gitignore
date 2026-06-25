@@ -1,4 +1,5 @@
 __pycache__/
+.pytest_cache/
 .ipynb_checkpoints
 .DS_Store
 *.jpg
@@ -38,6 +39,7 @@ docs/superpowers/
 
 # IDE / tooling internals
 .claude/
+CLAUDE.md
 
 # Container bind-mount artifact (docker overlay filesystem roots)
 tm/
