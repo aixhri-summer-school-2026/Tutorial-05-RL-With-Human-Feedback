@@ -30,24 +30,24 @@ make tutorial-check    # expected: "tutorial-check OK — you're ready."
 
 ## The tutorial (2 hours)
 
-See [docs/tutorial/03-tier-walkthrough.md](docs/tutorial/03-tier-walkthrough.md) for the full flow. Quick reference:
+See [docs/tutorial/03-walkthrough.md](docs/tutorial/03-walkthrough.md) for the full flow. Quick reference:
 
 | Make verb | What it does |
 |---|---|
 | `make tutorial-check` | Assert imports + artifacts are present |
 | `make tutorial-check-loss` | Green-light test for the MILE-loss exercise |
-| `make tutorial-metaworld` | Tier 1: MetaWorld peg-insert with synthetic expert |
-| `make tutorial-fake` | Tier 2: Franka fake backend, mediocre base policy |
+| `make tutorial-metaworld` | Part 1: MetaWorld peg-insert with synthetic expert |
+| `make tutorial-fake` | Part 2: Franka fake backend smoke test |
 | `make sim-up` | Start the multipanda MuJoCo stacking sim |
-| `make tutorial-collect-train` | Tier 3: keyboard teleop → collect → train |
+| `make tutorial-collect-train` | Part 3: keyboard teleop → collect → train |
 | `make eval-base` | Evaluate the base policy (run before and after training) |
 
 **Docs:**
 - [00-setup.md](docs/tutorial/00-setup.md) — pre-session setup (homework)
 - [01-concepts.md](docs/tutorial/01-concepts.md) — 5-min MILE primer
 - [02-loss-exercise.md](docs/tutorial/02-loss-exercise.md) — implement the MILE loss
-- [03-tier-walkthrough.md](docs/tutorial/03-tier-walkthrough.md) — full 2-hour flow
-- [04-teleop.md](docs/tutorial/04-teleop.md) — keyboard / gamepad / Vive reference
+- [03-walkthrough.md](docs/tutorial/03-walkthrough.md) — full tutorial flow
+- [04-teleop.md](docs/tutorial/04-teleop.md) — keyboard / gamepad reference
 - [05-troubleshooting.md](docs/tutorial/05-troubleshooting.md) — FAQ
 - [06-instructor-runbook.md](docs/tutorial/06-instructor-runbook.md) — instructor/staff guide
 

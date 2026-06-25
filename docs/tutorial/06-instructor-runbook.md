@@ -304,20 +304,19 @@ These are the **instructor's verbal anchors** for each tier. Adapt to your audie
 - Round 0 to Round 1: success improves. That's your loss working.
 - By Round N, the policy is learning when the human would help, and it's getting better.
 
-**Success expectation:** 0.18 → 0.35 → 0.52 (or similar). If success drops, the loss may have a bug; check the test (`make tutorial-check-loss`).
+**Success expectation:** success rate increases from Round 0 to Round 1 (exact numbers vary ±0.2 between runs). If success does not increase at all, the loss may have a bug; check the test (`make tutorial-check-loss`).
 
 ---
 
 ### Tier 2: Franka Fake Backend (0:35–0:42)
 
 **Framing:**
-> "Same MILE code, new robot task. No physics — just kinematics. Watch the base policy fail in 60% of trials. This is where your interventions (Tier 3) will help."
+> "This is a 30-second smoke test. It runs one scripted episode on the fake backend — no physics, no ROS — and asserts success. If it prints 'smoke_franka_env ok', the Franka environment pipeline is good and we're clear for the MuJoCo sim."
 
 **Key points:**
-- Obs is 9-dim: `[ee_xyz, gripper_width, top_xyz, bottom_xy]`.
-- Action is 4-DoF: `[Δx, Δy, Δz, gripper_cmd]`.
-- The policy succeeds ~40–50%. It fails when it misses the cube or stacks wobblily.
-- This is a headless sanity check. No graphics, just data.
+- Output is just `smoke_franka_env ok`. No per-episode results — that's expected.
+- Obs is 9-dim: `[ee_xyz, gripper_width, top_xyz, bottom_xy]`. Action is 4-DoF: `[Δx, Δy, Δz, gripper_cmd]`.
+- If it fails, something is broken in the environment or import chain — fix before Tier 3.
 
 **Optional talking point (if someone asks about observation difference):**
 > "MetaWorld obs is 156-dim. Franka obs is 9-dim. Why? Franka cubes don't move in the hand (gripper-centric); we only track 3D position, not full object pose. Fewer dimensions = easier to collect and train on."

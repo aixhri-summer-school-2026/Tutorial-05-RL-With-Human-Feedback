@@ -46,3 +46,4 @@ experiment:
     auto_eval: true
     n_episodes: 10
     every_n_epochs: 50
+    video_dir: ../output_dir/metaworld_eval_videos

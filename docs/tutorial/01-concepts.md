@@ -74,18 +74,18 @@ Total Loss = λ₁ × (Gaussian NLL) + λ₂ × (BCE on ν)
 
 The λ weights let you balance: "should we focus more on predicting when humans intervene, or on getting the right action once they do?" Usually, both matter equally, so λ₁ = λ₂ = 1.
 
-## The 4-tier ladder: where MILE runs
+## The 4-part ladder: where MILE runs
 
 You'll implement the loss once, then watch it train on four different tasks:
 
-| Tier | Task | Backend | You control the human? | Point |
+| Part | Task | Backend | You control the human? | Point |
 |---|---|---|---|---|
-| **Tier 1** | Peg-Insert (MetaWorld) | MetaWorld simulator | No—automated synthetic expert | Validate the loss works (clean signal from sim) |
-| **Tier 2** | Franka Block Stacking (fake) | Kinematic fake backend | No—headless mediocre policy | Same loss, new task; no ROS needed |
-| **Tier 3** | Franka Block Stacking (sim) | MuJoCo multipanda sim | **Yes—you!** keyboard teleop | Your interventions train your policy; watch improvement |
-| **Tier 4** | Franka Block Stacking (real) | Real FR3 robot | **Yes—you!** keyboard (or Vive) | Sim→real payoff on live hardware |
+| **Part 1** | Peg-Insert (MetaWorld) | MetaWorld simulator | No—automated synthetic expert | Validate the loss works (clean signal from sim) |
+| **Part 2** | Franka Block Stacking (fake) | Kinematic fake backend | No—smoke test | Confirm the Franka environment loads; no ROS needed |
+| **Part 3** | Franka Block Stacking (sim) | MuJoCo multipanda sim | **Yes—you!** keyboard teleop | Your interventions train your policy; watch improvement |
+| **Part 4** | Franka Block Stacking (real) | Real FR3 robot | **Yes—you!** keyboard | Sim→real payoff on live hardware |
 
-All four tiers run in one Docker image and use the *same* loss you implement.
+All four parts run in one Docker image and use the *same* loss you implement.
 
 ## Next step
 

@@ -1,6 +1,6 @@
 # Teleop Reference: Controlling the Robot
 
-This guide explains how to control the Franka robot during the tutorial using keyboard, joystick, or Vive. The key concept is **segment-toggle intervention**: you decide when you're "in control" by toggling a clutch button, and the robot learns from both these moments and the times you let it run autonomously.
+This guide explains how to control the Franka robot during the tutorial using keyboard or joystick. The key concept is **segment-toggle intervention**: you decide when you're "in control" by toggling a clutch button, and the robot learns from both these moments and the times you let it run autonomously.
 
 ---
 
@@ -20,7 +20,7 @@ Each press/release of the intervention button toggles your state. Once in a segm
 
 ## Keyboard (default for Tiers 2 & 3)
 
-The keyboard is the default teleop device for the tutorial's sim and fake-world tiers. Use it for development, testing, and Tier 3 (Franka in MuJoCo).
+The keyboard is the default teleop device for the tutorial's sim and fake-world parts. Use it for development, testing, and Part 3 (Franka in MuJoCo).
 
 **Keep the keyboard window focused** while controlling—pygame needs input focus to capture keys.
 
@@ -77,34 +77,6 @@ Xbox 360, Xbox One, and compatible gamepads work out of the box. Select this dev
 
 ---
 
-## Vive Wand (`intervener: vive`)
-
-The HTC Vive is available at the venue for Tier 4 (real-robot hardware). It provides hand-tracking and immersive control. Select this device in `config/franka_real.yaml`:
-
-```json
-"experiment": {
-  "intervener": "vive",
-  ...
-}
-```
-
-### Vive button map
-
-| Control | Action | Notes |
-|---|---|---|
-| **Hand position (tracking)** | EE target X/Y/Z | Wand tracks position in 3D; maps to Cartesian targets |
-| **Clutch button** | Toggle intervention segment | Press to enter/exit ν=1 mode |
-| **Grip button** | Toggle gripper | Switches between open and closed |
-| **Menu button** | End episode (success) | Saves the rollout |
-| **Touchpad** | Discard episode | Rejects current data |
-
-### Vive tips
-
-- **Hardware dependent**: only available if Vive is connected and calibrated at the venue.
-- **Immersive feel**: you see your hand position in the MuJoCo twin viewer, making it easier to aim fine motions.
-- **Fallback**: if Vive disconnects or isn't available, the config can be switched back to joystick or keyboard.
-
----
 
 ## How to know you're intervening (ν=1)
 
@@ -123,9 +95,9 @@ As you control the robot, watch the terminal/collector output. You'll see lines 
 
 ## Workflow: a typical rollout
 
-1. **Start the controller** (keyboard, joystick, or Vive).
+1. **Start the controller** (keyboard or joystick).
 2. **Watch the robot plan** (ν=0, you're not intervening). It might reach toward the wrong cube or move awkwardly.
-3. **Press the clutch toggle** (space, RB, or Vive menu) to enter a segment (ν=1).
+3. **Press the clutch toggle** (space or RB) to enter a segment (ν=1).
 4. **Guide the robot** with stick/keyboard/hand input. Use movement keys to nudge, and gripper toggle when you need to open/close.
 5. **Release the clutch** (press toggle again) once you've corrected the error. The robot resumes autonomy (ν=0).
 6. **Repeat** for the next error, or press **Enter** / **Start** to end the episode successfully.
@@ -142,13 +114,13 @@ In `config/franka_sim.yaml` (for simulation) or `config/franka_real.yaml` (for h
 
 ```json
 "experiment": {
-  "intervener": "keyboard",    // or "joystick" or "vive"
+  "intervener": "keyboard",    // or "joystick"
   ...
 }
 ```
 
-- **Tier 2 (Fake)** & **Tier 3 (Sim)**: use `keyboard` or `joystick` (no ROS/hardware).
-- **Tier 4 (Real)**: use `joystick` (default) or `vive` (if available at the venue).
+- **Parts 2 & 3 (fake + MuJoCo sim)**: use `keyboard` or `joystick` (no ROS/hardware).
+- **Part 4 (real FR3)**: use `joystick` (default).
 
 Switch devices by editing the config and restarting the collector.
 
@@ -165,11 +137,6 @@ Switch devices by editing the config and restarting the collector.
 - **Test**: press a button. If the terminal shows nothing, the gamepad may not be detected.
 - **Fallback**: use keyboard instead.
 
-### Vive: disconnected or not tracking
-- **Restart the tracker**: power cycle the Vive headset and controller.
-- **Check calibration**: see the venue setup guide.
-- **Fallback**: switch to joystick in the config.
-
 ### "intervene=False" even though I'm holding the clutch
 - **Wrong mode**: confirm your config uses `"segment_mode": true` (default). Older configs may use per-frame clutch.
 - **Debounce cooldown**: if you toggled too fast, wait 200 ms between presses.
@@ -177,9 +144,5 @@ Switch devices by editing the config and restarting the collector.
 ---
 
 ## Next steps
-
-You're ready to intervene! Head to:
-
-→ **[03-tier-walkthrough.md](03-tier-walkthrough.md)**: Run through the four tiers and watch your interventions train the policy.
 
 → **[05-troubleshooting.md](05-troubleshooting.md)**: Stuck? Find solutions here.

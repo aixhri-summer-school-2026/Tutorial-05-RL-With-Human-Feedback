@@ -1,3 +1,4 @@
+import os
 import gymnasium as gym
 import pickle
 import numpy as np
@@ -23,21 +24,45 @@ from mile.utils import Logger, ContInterventionMetrics, DiscInterventionMetrics
 from mile.computational_model import computational_intervention_model, sum_independent_dims, COST_LOOKUP
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-rand = np.random.randint(0, 1000)   
+rand = np.random.randint(0, 1000)
 
 
-def generate_rollout(agent: Union[SACPolicy, policies.ActorCriticPolicy, QNetwork], 
-                    env: gym.Env, 
+def _make_render_env(env_name: str):
+    """Return a MetaWorld env created with render_mode='rgb_array', or None."""
+    try:
+        from metaworld.envs import ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE
+        if env_name + '-goal-observable' in ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE:
+            cls = ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE[env_name + '-goal-observable']
+            renv = cls(render_mode='rgb_array')
+            renv._freeze_rand_vec = False
+            return renv
+    except Exception:
+        pass
+    return None
+
+
+def _save_video(frames: list, path: str, fps: int = 15) -> None:
+    import cv2
+    h, w = frames[0].shape[:2]
+    writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+    for frame in frames:
+        writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+    writer.release()
+
+
+def generate_rollout(agent: Union[SACPolicy, policies.ActorCriticPolicy, QNetwork],
+                    env: gym.Env,
                     env_name: str,
-                    num_episodes: int=10, 
-                    max_t: int=1000, 
-                    scores_window: deque=None, 
-                    with_intervention: bool=False, 
+                    num_episodes: int=10,
+                    max_t: int=1000,
+                    scores_window: deque=None,
+                    with_intervention: bool=False,
                     intervention_policy: Union[SACPolicy, policies.ActorCriticPolicy, QNetwork]=None,
                     mental_model: Union[policies.ActorCriticPolicy, QNetwork]=None,
                     seeded: bool=False,
+                    video_dir: Optional[str]=None,
                     ) -> Tuple[deque, float]:
-    
+
     agent.set_training_mode(False)
     if with_intervention:
         assert intervention_policy is not None, 'Intervention policy is not provided'
@@ -48,10 +73,20 @@ def generate_rollout(agent: Union[SACPolicy, policies.ActorCriticPolicy, QNetwor
             raise ValueError(f'Cost lookup for {env_name} is not available, please add it to COST_LOOKUP')
         cost = COST_LOOKUP[env_name][0]
         cdf_scale = COST_LOOKUP[env_name][1]
+
+    render_env = None
+    if video_dir is not None:
+        render_env = _make_render_env(env_name)
+        if render_env is not None:
+            os.makedirs(video_dir, exist_ok=True)
+
     with torch.no_grad():
         success_rate = 0
         for eps in range(num_episodes):
             state, _ = env.reset(seed=eps)
+            if render_env is not None:
+                render_env.reset(seed=eps)
+            frames = []
             score = 0
             success = 0
             for t in range(max_t):
@@ -91,6 +126,11 @@ def generate_rollout(agent: Union[SACPolicy, policies.ActorCriticPolicy, QNetwor
                         rollout_action = TanhBijector.inverse(torch.from_numpy(rollout_action)).numpy()
                     action = rollout_action
                 next_state, reward, terminated, truncated, info = env.step(action)
+                if render_env is not None:
+                    render_env.step(action)
+                    frame = render_env.render()
+                    if frame is not None:
+                        frames.append(frame)
                 done = terminated or truncated
                 state = next_state
                 score += reward
@@ -98,10 +138,15 @@ def generate_rollout(agent: Union[SACPolicy, policies.ActorCriticPolicy, QNetwor
                     if info['success']==1:
                         success = 1
                     break
+            if render_env is not None and frames:
+                _save_video(frames, os.path.join(video_dir, f'episode_{eps}.mp4'))
             success_rate += success
             scores_window.append(score)
 
         success_rate = success_rate / num_episodes
+
+    if render_env is not None:
+        render_env.close()
     return scores_window, success_rate
 
 
@@ -337,11 +382,14 @@ class InterventionTrainer:
                     validation_metrics = self._validate_one_epoch(val_dataloader)
             if self.experiment_config['rollout']['enabled'] and self.auto_eval:
                 if epoch % self.experiment_config['rollout']['every_n_epochs'] == 0 or epoch == self.num_epochs:
-                    self.scores_window, success_rate = generate_rollout(self.policy, 
-                                                                        self.env, 
+                    _base_video_dir = self.experiment_config['rollout'].get('video_dir', None)
+                    _video_dir = os.path.join(_base_video_dir, f'round{round}_epoch{epoch}') if _base_video_dir else None
+                    self.scores_window, success_rate = generate_rollout(self.policy,
+                                                                        self.env,
                                                                         env_name=self.env_name,
-                                                                        num_episodes=self.experiment_config['rollout']['n_episodes'], 
-                                                                        scores_window=self.score_window)
+                                                                        num_episodes=self.experiment_config['rollout']['n_episodes'],
+                                                                        scores_window=self.score_window,
+                                                                        video_dir=_video_dir)
                     scores_window = deque(maxlen=100)
                     scores_window, init_success_rate = generate_rollout(self.init_policy, self.env, env_name=self.env_name, num_episodes=self.experiment_config['rollout']['n_episodes'], scores_window=scores_window)
                     if success_rate > best_success_rate:

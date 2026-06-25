@@ -248,8 +248,8 @@ After setup, you have:
   - All tutorial configs and scripts
   
 - **trained_models/** directory
-  - MetaWorld peg-insert policies (Tier 1)
-  - Franka base policy (Tier 3)
+  - MetaWorld peg-insert policies (Part 1)
+  - Franka base policy (Part 3)
 
 ---
 

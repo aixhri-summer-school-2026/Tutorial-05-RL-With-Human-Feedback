@@ -34,6 +34,8 @@ Where:
 - Take the log: `log(intervention_prob)`
 - Pass to `F.nll_loss()` with the ground truth labels
 
+> **Note on BCE vs. NLL:** The concepts doc calls this loss "binary cross-entropy (BCE)." Here we implement it as 2-class NLL using a softmax head (rather than a sigmoid). These are mathematically equivalent for binary classification — `NLL(softmax([p0, p1]), label)` equals `BCE(p1, label)`. We use the 2-class form because MILE's intervention head outputs a 2-class distribution, which `F.nll_loss` handles naturally.
+
 ### 2. Continuous Loss: Action Prediction
 
 When the human does intervene (ν = 1), the mental model predicts the human's action. This is modeled as a Gaussian distribution.

@@ -1,19 +1,17 @@
-# MILE Tutorial — The 2-Hour Hands-On Flow
+# MILE Tutorial — Hands-On Flow
 
-This is your step-by-step guide for the live 2-hour tutorial. **You've already completed the setup** (Sections 0–2). Now it's time to run the full MILE loop: from a synthetic expert (Tier 1) through your own interventions (Tier 3) to the real robot (Tier 4).
+This is your step-by-step guide. **You've already completed the setup** (Sections 0–2). Now it's time to run the full MILE loop: from a synthetic expert (MetaWorld) through your own interventions (Franka sim) to the real robot.
 
 **All commands run inside the container.** To start:
 ```bash
 make up && make shell
 ```
 
-You're now inside the `mile` container with the environment sourced. All timestamps below assume you start the clock at 0:00 when you open this document.
-
 ---
 
-## 0:00–0:10 · Land & Verify (10 min)
+## Land & Verify
 
-**Goal:** Confirm your setup is ready; get a 5-min mental model of MILE.
+**Goal:** Confirm your setup is ready; get a mental model of MILE.
 
 ### Step 1: Run the readiness check
 
@@ -40,23 +38,20 @@ tutorial-check OK — you're ready.
 
 **If you see any `FAIL` or `MISSING`:** stop and call an instructor. Do not proceed.
 
-### Step 2: Read the concepts (5 min)
+### Step 2: Read the concepts
 
-While your brain settles, read **[01-concepts.md](01-concepts.md)** — it's the anchor for everything you're about to do:
+Read **[01-concepts.md](01-concepts.md)** — it's the anchor for everything you're about to do:
 
 - **ν (nu):** the binary "did the human intervene?" flag on each timestep.
 - **The intervention model p(ν=1|s):** the robot's prediction of when you'll step in.
 - **Joint training:** the policy (what the robot executes) and the mental model (what you think it will do) train together.
 - **The loss you'll write:** BCE on ν + Gaussian NLL on ν=1 steps.
-- **The 4-tier ladder:** MetaWorld → Franka fake → Franka sim → real FR3.
-
-You're now ready to implement MILE's heart.
 
 ---
 
-## 0:10–0:22 · Implement the Loss (12 min)
+## Implement the Loss
 
-**Goal:** Write `mile_cont_loss_fn` — the loss used by all four tiers.
+**Goal:** Write `mile_cont_loss_fn` — the loss used by all tiers.
 
 **File to edit:** (from inside the container)
 ```bash
@@ -101,15 +96,11 @@ No worries — the answer key will auto-apply when you train, and you can review
 
 ---
 
-## 0:22–0:40 · Tier 1: MetaWorld (Your Loss on the Paper Benchmark)
+## MetaWorld: Your Loss on the Paper Benchmark
 
 **Goal:** Watch MILE train on the classic peg-insertion task with the loss you just wrote.
 
-**Setup:**
-
 No human involved — you're watching an *automated synthetic expert* intervene. The point is to validate that your loss works on clean sim signal.
-
-**Run Tier 1:**
 
 ```bash
 make tutorial-metaworld
@@ -117,40 +108,34 @@ make tutorial-metaworld
 
 **What to expect:**
 
-The script will print:
+The script prints training logs (one line per epoch) followed by a per-round success rate. Exact numbers vary by run (±0.2 is normal), but you should see the success rate **increase from Round 0 to Round 1**:
+
 ```
-Starting MetaWorld peg-insert benchmark (synthetic human)
 Round 0: collecting…
-  [done]
-  training (epoch 1/100)…
-  success_rate: 0.18 → 0.35
+  training (50 epochs)…
+  success_rate: 0.10 → 0.30
 Round 1: collecting…
-  [done]
-  training (epoch 1/100)…
-  success_rate: 0.35 → 0.52
-Final success rate: 0.52
+  training (50 epochs)…
+  success_rate: 0.30 → 0.50
 ```
+
+If success does **not** increase at all, your loss may have a bug — re-run `make tutorial-check-loss`.
 
 **What's happening:**
 
-1. Round 0: the synthetic human (your downloaded expert + MILE's intervention model) collects data as the initial policy tries and fails.
+1. Round 0: the synthetic human (downloaded expert + MILE's intervention model) collects data as the initial policy tries and fails.
 2. The policy trains on interventions — your loss guides it.
-3. Round 1: the improved policy collects data. Success climbs (0.35 → 0.52).
-4. Each round, the policy gets better at the peg-insertion task.
-
-**Duration:** ~10 min (mostly waiting for training).
+3. Round 1: the improved policy collects data. Success climbs further.
 
 **The key insight:** "Success improved from Round 0 to Round 1. I wrote the loss. My loss made this happen."
 
-This is your proof that the loss is correct *and* that MILE works. In Tier 3, you'll replace the synthetic expert with your own keyboard interventions.
+This is your proof that the loss is correct *and* that MILE works. In the next step, you'll replace the synthetic expert with your own keyboard interventions.
 
 ---
 
-## 0:40–0:45 · Tier 2: Franka Fake Backend (Headless, Quick)
+## Franka Fake Backend: Environment Smoke Test
 
-**Goal:** See the Franka task on the simplest backend (no physics, no ROS).
-
-**Run Tier 2:**
+**Goal:** Confirm the Franka environment loads and runs end-to-end on the simplest backend (no physics, no ROS).
 
 ```bash
 make tutorial-fake
@@ -158,33 +143,18 @@ make tutorial-fake
 
 **Expected output:**
 ```
-Evaluating mediocre base policy on Franka-Stack-Fake-v0…
-Episode 1: success=False (gripper missed the cube)
-Episode 2: success=True
-Episode 3: success=False (stacked, but fell on the second cube)
-…
-Mean success rate: 0.4
+smoke_franka_env ok
 ```
 
-**What's happening:**
+This runs one scripted episode on the **fake backend** — a simple kinematic world with no MuJoCo physics — and asserts success. If it prints `ok`, you're clear to run the full sim. If it fails, call an instructor before proceeding.
 
-- The mediocre **base policy** (trained offline from sim rollouts) runs on the **fake backend** — a simple kinematic world with no MuJoCo physics.
-- It succeeds ~40% of the time. It fails in predictable ways: misses the cube, stacks but wobbles, places too high.
-- This is where MILE will help: your interventions (Tier 3) will teach it to handle these failures.
-
-**Why this tier?**
-
-It's a 5-minute sanity check. The policy runs at full speed (no graphics), and you see the observation/action dimensions:
+The observation/action dimensions you'll use in the sim:
 - **Obs:** 9-dim (EE position, gripper width, cube position) × `FrameStack(10)` = 90-dim.
 - **Action:** 4-DoF (Δx, Δy, Δz, gripper command).
 
-**Duration:** ~2 min.
-
-**Fallback for slow laptops:** if your MuJoCo rendering is sluggish in the next step, you can re-run this to see observations without graphics overhead.
-
 ---
 
-## 0:45–1:00 · Visual Sim & Learn the Keyboard (15 min)
+## Visual Sim & Learn the Keyboard
 
 **Goal:** Start the MuJoCo sim and practice the teleop controls.
 
@@ -194,11 +164,6 @@ In the container, start the simulation in the background:
 
 ```bash
 make sim-up
-```
-
-**Expected output:**
-```
-sim launching headless; give it ~10s, then check: make collect-mediocre
 ```
 
 Wait ~10 seconds for the sim to boot.
@@ -211,18 +176,16 @@ On your **host machine** (laptop, not inside the container), open a terminal and
 make sim-gui
 ```
 
-**Expected output:**
-
 A MuJoCo window opens. You'll see:
 - The Franka robot (light blue arm) at home.
 - Two red cubes on the table (the stack target).
 - A 3D viewport.
 
-**Note on rendering:** If the window is slow or doesn't appear, see [05-troubleshooting.md](05-troubleshooting.md#gl-rendering-slow). You can skip the visual and proceed headless to Tier 3 using `make eval-base` and `make tutorial-collect-train` without `sim-gui`.
+**Note on rendering:** If the window is slow or doesn't appear, see [05-troubleshooting.md](05-troubleshooting.md#gl-rendering-slow). You can skip the visual and proceed headless using `make eval-base` and `make tutorial-collect-train` without `sim-gui`.
 
 ### Step 3: Learn the keyboard (free-play teleop)
 
-**Inside the container**, open a shell (or use your existing one) and run:
+**Inside the container**, run:
 
 ```bash
 make tutorial-teleop
@@ -252,13 +215,11 @@ This launches a free-play mode where you can experiment with the keyboard. Refer
 
 - When **ν=0** (clutch off), the policy is commanding the arm. You see the policy's motion in real-time.
 - When **ν=1** (clutch on), **you** command the arm. The policy learns from this.
-- In Tier 3, you'll toggle the clutch on *only when the policy is about to fail*, and toggle it off once you've corrected the error.
-
-**Duration:** 5–10 min of free-play to get comfortable. When you feel confident, move to Tier 3.
+- In the next step, you'll toggle the clutch on *only when the policy is about to fail*, and toggle it off once you've corrected the error.
 
 ---
 
-## 1:00–1:30 · Tier 3: Be the Human in Sim (30 min)
+## Be the Human in Sim
 
 **Goal:** Collect your own interventions, train on your data, watch your policy improve.
 
@@ -274,16 +235,18 @@ make eval-base
 
 **Expected output:**
 ```
-Evaluating base policy (10 episodes)…
-Episode 1: success=True
-Episode 2: success=False
-…
-Mean success rate: 0.42
-Std: 0.10
-Videos saved to: output_dir/franka/eval_videos_TIMESTAMP/
+episode 0: success=1 steps=138
+episode 1: success=0 steps=1000
+episode 2: success=1 steps=97
+episode 3: success=0 steps=1000
+episode 4: success=1 steps=688
+
+BASE POLICY SIM SUCCESS RATE = 0.60 (3/5); mean steps=585
 ```
 
-**Record the before-score.** In this example, it's **0.42** (42% success).
+(Episodes are 0-indexed. `success=1` = succeeded; `success=0` = timed out. Numbers vary between runs.)
+
+**Record the before-score.** In this example, it's **0.60** (60% success).
 
 ### Step 2: Collect interventions with keyboard teleop
 
@@ -295,7 +258,7 @@ make tutorial-collect-train
 
 **What happens:**
 
-1. The container launches the training system.
+1. The training system launches.
 2. The sim displays the arm. The policy is running.
 3. **You watch and intervene:** when you see the policy is about to fail (reaching for empty space, gripper off-target, etc.), **press SPACE** to toggle intervention on and take over.
 4. Once you fix the situation, **press SPACE again** to toggle intervention off and let the policy continue.
@@ -305,28 +268,10 @@ make tutorial-collect-train
 
 - Aim for **2–3 episodes** with 1–2 interventions per episode.
 - Don't over-engineer — "good enough" is fine. You're teaching the policy to handle realistic human feedback.
-- The policy updates immediately after training, so you'll see the effect.
-
-**Expected timeline:**
-
-```
-Episode 1: collecting with keyboard… (30–60 sec of gameplay)
-  interventions: 2
-  [saving]
-Episode 2: collecting with keyboard…
-  interventions: 1
-  [saving]
-
-Training on 2 episodes (3 interventions total)…
-Round 0 complete; retraining policy...
-  policy loss: 0.23
-  mental_model loss: 0.12
-  [done]
-```
 
 **What you're training:**
 
-The same loss you implemented in Tier 1, now on *your* data. The policy learns from your interventions (ν=1) and respects your non-interventions (ν=0).
+The same loss you implemented for MetaWorld, now on *your* data. The policy learns from your interventions (ν=1) and respects your non-interventions (ν=0).
 
 ### Step 3: Evaluate the trained policy (after)
 
@@ -338,40 +283,35 @@ make eval-mile
 
 **Expected output:**
 ```
-Evaluating trained policy (10 episodes)…
-…
-Mean success rate: 0.58
-Std: 0.11
-Videos saved to: output_dir/franka/eval_mile_videos_TIMESTAMP/
+episode 0: success=1 steps=112
+episode 1: success=1 steps=245
+episode 2: success=0 steps=1000
+episode 3: success=1 steps=98
+episode 4: success=1 steps=310
+
+BASE POLICY SIM SUCCESS RATE = 0.80 (4/5); mean steps=353
 ```
 
-**Record the after-score.** In this example, it's **0.58**.
+**Record the after-score.** In this example, it's **0.80**.
 
-**The delta:** 0.42 → 0.58 = **+0.16 (16% improvement)**.
+**The delta:** 0.60 → 0.80 = **+0.20 (20% improvement)**.
 
 **Interpret the result:**
 
 - **Visible improvement** (Δ > 0.10): great! Your interventions directly taught the policy.
-- **Small improvement or no change** (Δ ≤ 0.05): the base policy was already close to optimal, or your interventions didn't cover the failure mode. This is normal from sparse data; the *guaranteed* improvement demo is Tier 1 (MetaWorld), which removes the pressure on Franka's sparse interventions.
+- **Small improvement or no change** (Δ ≤ 0.05): the base policy was already close to optimal, or your interventions didn't cover the failure mode. This is normal from sparse data; the *guaranteed* improvement demo is MetaWorld, which removes the pressure on Franka's sparse interventions.
 
 **Review the videos:**
 
-In the output directory, you'll find videos of successful episodes. Watch them — you'll see the policy executing the corrections you taught it.
-
-### Duration
-
-This step takes **20–30 min** total:
-- 5–10 min: eval-before.
-- 10–15 min: collecting with teleop + training.
-- 5 min: eval-after + reflection.
+Episode videos are saved to `output_dir/franka/eval_mile_videos_*/`. Watch them — you'll see the policy executing the corrections you taught it.
 
 ---
 
-## ~1:05–1:45 · Tier 4: Real FR3 (Parallel Queue)
+## Real FR3 (Parallel Queue)
 
 **Goal:** Rotate through the live robot and experience sim→real transfer.
 
-**This happens in parallel with Tier 3.** You don't wait for the entire room to finish sim work. Instead, staff manage a queue at the real-robot station.
+**This happens in parallel with the sim step.** You don't wait for the entire room to finish. Instead, staff manage a queue at the real-robot station.
 
 ### When it's your turn:
 
@@ -385,7 +325,7 @@ This step takes **20–30 min** total:
 
 **Your experience:**
 
-- **Same keyboard** (or HTC Vive if wired) as Tier 3.
+- **Same keyboard** as the sim step.
 - **Same policy** trained in your laptop's sim.
 - **Same MILE loop** — collect interventions, retrain, eval.
 
@@ -398,19 +338,13 @@ make franka-up
 # In parallel, staff launch camera + AprilTag (staff)
 make apriltag-up
 
-# You collect interventions with keyboard (or Vive)
+# You collect interventions with keyboard
 make tutorial-collect-train
 ```
 
 **The cubes:**
 
-Real wooden cubes are tracked via AprilTag markers (vision) instead of MuJoCo ground truth. Everything else is identical to Tier 3.
-
-**Expected timeline:**
-
-- **5 min per participant** (load time + 2–3 episodes).
-- **Parallel queue:** while you're collecting, the next person starts eval-before on the sim.
-- **No waiting:** Tier 4 doesn't gate the room; the clock doesn't stop.
+Real wooden cubes are tracked via AprilTag markers (vision) instead of MuJoCo ground truth. Everything else is identical to the sim step.
 
 **What's identical (sim→real):**
 
@@ -423,23 +357,20 @@ Real wooden cubes are tracked via AprilTag markers (vision) instead of MuJoCo gr
 
 - **Backend:** multipanda ROS2 sim → real FR3 (hucebot controller).
 - **Pose source:** MuJoCo ground truth → AprilTag camera measurements.
-- **(Optional) Teleop device:** keyboard → HTC Vive (if wired).
 
 This is the **sim→real transfer payoff**: the sim taught you how MILE works; the real robot proves it works on hardware.
 
 ---
 
-## 1:45–2:00 · Wrap & Q&A (15 min)
-
-**Goal:** Reflect on what you built and ask questions.
+## Wrap & Q&A
 
 **Key takeaways:**
 
-1. **One loss, four tasks:** you wrote `mile_cont_loss_fn` once, and it trained the MetaWorld policy (Tier 1), the Franka sim policy (Tier 3), and the real-robot policy (Tier 4). That's the power of MILE — the method is task-agnostic.
+1. **One loss, multiple tasks:** you wrote `mile_cont_loss_fn` once, and it trained the MetaWorld policy, the Franka sim policy, and the real-robot policy. That's the power of MILE — the method is task-agnostic.
 
-2. **Sim→real is one controller swap:** the same robot controller ran in sim and on hardware. The only differences were the observations (sim ground-truth vs. real AprilTag) and (optionally) the teleop device.
+2. **Sim→real is one backend swap:** the same robot controller ran in sim and on hardware. The only differences were the observations (sim ground-truth vs. real AprilTag).
 
-3. **You are the expert:** in Tier 1, a synthetic expert improved the policy. In Tier 3 and 4, *you* were the expert. MILE learns from human intuition — when you see the policy about to fail, you step in.
+3. **You are the expert:** in MetaWorld, a synthetic expert improved the policy. In the sim and real-robot steps, *you* were the expert. MILE learns from human intuition — when you see the policy about to fail, you step in.
 
 4. **Joint training matters:** the policy and mental model train together. Your interventions teach both: the policy learns the right action, and the mental model learns when you'd intervene.
 
@@ -447,14 +378,14 @@ This is the **sim→real transfer payoff**: the sim taught you how MILE works; t
 
 - Why the intervention flag ν is central (not just mimicry, but *when* to ask for help).
 - How the probit intervention model decides when p(ν=1|s) is high enough to ask.
-- Why Tier 1's guaranteed improvement (MetaWorld) is separate from Tier 3's best-effort (sparse Franka data).
+- Why MetaWorld's guaranteed improvement is separate from the Franka sim's best-effort (sparse data).
 - The real-robot transfer: what worked, what surprised you, what failed.
 
 **Questions?**
 
 Ask the instructors. They've run this loop many times. Common questions:
 
-- "Why did my policy improve less than Tier 1?" → Tier 1 uses a synthetic expert with dense data; your Franka interventions are sparse. Both are valid; Tier 1 is the guarantee.
+- "Why did my policy improve less than MetaWorld?" → MetaWorld uses a synthetic expert with dense data; your Franka interventions are sparse. Both are valid; MetaWorld is the guarantee.
 - "Can I try more rounds?" → Yes, run `make tutorial-collect-train` again.
 - "What if I want to deploy this on a different robot?" → The code is robot-agnostic; you'd swap the backend (RobotBackend ABC) and pose source.
 
@@ -483,7 +414,7 @@ xhost +local:root
 make sim-gui
 ```
 
-If still stuck, fall back to headless (skip sim-gui, proceed to Tier 3 directly).
+If still stuck, fall back to headless (skip sim-gui, proceed directly to eval-base).
 
 ### Keyboard doesn't respond in sim-gui
 
@@ -524,13 +455,13 @@ If this fails, call an instructor.
 
 ## FAQ
 
-**Q: Can I run multiple tiers in parallel?**
+**Q: Can I run the real-robot queue in parallel with the sim step?**
 
-A: Yes. Tier 4 (real FR3) runs in parallel with Tier 3. Tiers 1–2 are faster and run first.
+A: Yes — that's the intended flow. The real-robot station runs while others are still in the sim step.
 
-**Q: What if I want to change the loss after Tier 1?**
+**Q: What if I want to change the loss after MetaWorld?**
 
-A: You can edit `mile_franka/tutorial/loss_exercise.py` and re-run `make tutorial-check-loss`. The next `make tutorial-collect-train` will use your updated loss. (Tier 1 won't re-run unless you manually delete the logs.)
+A: Edit `mile_franka/tutorial/loss_exercise.py` and re-run `make tutorial-check-loss`. The next `make tutorial-collect-train` will use your updated loss.
 
 **Q: How many interventions do I need?**
 
@@ -538,8 +469,8 @@ A: 2–3 episodes with 1–2 interventions per episode is enough to see an effec
 
 **Q: What if I run out of time?**
 
-A: Tier 1 is the guaranteed "MILE works" demo. Tier 3's improvement is best-effort. If you're short on time, skip Tier 3's eval-after; the before-score still proves the base policy is real.
+A: The MetaWorld step is the guaranteed "MILE works" demo. The Franka sim improvement is best-effort. If you're short on time, skip eval-after; the before-score still proves the base policy is real.
 
 ---
 
-Enjoy the tutorial. You're learning a cutting-edge method for human-in-the-loop robot learning. 🤖
+Enjoy the tutorial. You're learning a cutting-edge method for human-in-the-loop robot learning.
