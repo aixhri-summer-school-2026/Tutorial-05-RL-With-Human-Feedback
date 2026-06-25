@@ -18,20 +18,23 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends xvfb ffmpeg
 # (For a CUDA box, swap the index URL and add `gpus: all` in docker-compose.yml.)
 COPY docker/requirements-mile.txt /tmp/requirements-mile.txt
 
-# MetaWorld is installed from a patched local copy rather than the git URL.
-# Its setup.py calls setup() with no arguments; modern pip (≥24) rejects the
-# built wheel because the metadata reports "unknown" instead of "metaworld".
-# Patching setup.py to pass name= explicitly avoids this name-resolution gap.
+# MetaWorld is installed from a local copy rather than the git URL. Its
+# setup.py calls setup() with no arguments, relying on pyproject.toml for
+# metadata. Modern pip (≥24) rejects the built wheel from a VCS URL because
+# the isolated-build setuptools reports "unknown" instead of "metaworld".
+# Installing from a local path with a pre-installed known-good setuptools
+# and --no-build-isolation works around both issues.
 ARG MW_COMMIT=c822f28f582ba1ad49eb5dcf61016566f28003ba
-RUN mkdir -p /tmp/metaworld-src \
+RUN pip install --no-cache-dir 'setuptools>=61.0.0,<75' wheel \
+ && mkdir -p /tmp/metaworld-src \
  && curl -sSL https://github.com/Farama-Foundation/Metaworld/archive/${MW_COMMIT}.tar.gz \
     | tar xz -C /tmp/metaworld-src --strip-components=1 \
- && sed -i 's/^setup()/setup(name="metaworld")/' /tmp/metaworld-src/setup.py \
- && pip install --no-cache-dir /tmp/metaworld-src \
+ && pip install --no-cache-dir --no-build-isolation /tmp/metaworld-src \
+ && python3 -c "import metaworld; print('metaworld OK')" \
+ && pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+ && pip install --no-cache-dir -r /tmp/requirements-mile.txt \
+ && python3 -c "import metaworld; print('metaworld OK (post-deps)')" \
  && rm -rf /tmp/metaworld-src
-
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
- && pip install --no-cache-dir -r /tmp/requirements-mile.txt
 
 # Bake the repo for shipping; in lab dev a bind mount (docker-compose.yml) overlays the
 # same path, so `pip install -e .` keeps working against live host edits.
