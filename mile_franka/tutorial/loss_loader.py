@@ -4,7 +4,12 @@ mile.algorithm.mile_cont_loss_fn WITHOUT editing production code.
 """
 import torch
 
-from mile_franka.tutorial import _loss_solution as solution
+try:
+    from mile_franka.tutorial import _loss_solution as _solution
+    _HAS_SOLUTION = True
+except ImportError:
+    _solution = None
+    _HAS_SOLUTION = False
 
 
 def _sample_batch():
@@ -20,15 +25,20 @@ def _sample_batch():
 def resolve_loss_fn():
     """Return (loss_fn, used_answer_key: bool)."""
     from mile_franka.tutorial import loss_exercise
-    b = _sample_batch()
-    ref = solution.mile_cont_loss_fn(*b)
-    try:
-        cand = loss_exercise.mile_cont_loss_fn(*b)
-        ok = all(torch.allclose(c, r, atol=1e-6) for c, r in zip(cand, ref))
-    except Exception:
-        ok = False
-    if ok:
-        print("[tutorial] using YOUR loss implementation ✔")
+    if _HAS_SOLUTION:
+        b = _sample_batch()
+        ref = _solution.mile_cont_loss_fn(*b)
+        try:
+            cand = loss_exercise.mile_cont_loss_fn(*b)
+            ok = all(torch.allclose(c, r, atol=1e-6) for c, r in zip(cand, ref))
+        except Exception:
+            ok = False
+        if ok:
+            print("[tutorial] using YOUR loss implementation ✔")
+            return loss_exercise.mile_cont_loss_fn, False
+        print("[tutorial] your loss is missing/incorrect — applying the answer key so you can train.")
+        return _solution.mile_cont_loss_fn, True
+    else:
+        # Solutions not distributed — participant must implement the exercise.
+        print("[tutorial] using YOUR loss implementation (no answer key available).")
         return loss_exercise.mile_cont_loss_fn, False
-    print("[tutorial] your loss is missing/incorrect — applying the answer key so you can train.")
-    return solution.mile_cont_loss_fn, True

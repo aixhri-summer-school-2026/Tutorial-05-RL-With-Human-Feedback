@@ -13,14 +13,18 @@ Paper: https://liralab.usc.edu/mile/
 Everything runs inside a single Docker image built on top of hucebot's `franka-humble` base.
 
 ```bash
-# One-time: build the hucebot base image (not on any registry)
+# One-time: build the hucebot base image (linux/amd64; Rosetta handles Mac ARM)
 git clone https://github.com/hucebot/multipanda_ros2
-cd multipanda_ros2 && docker compose build && cd -
+cd multipanda_ros2
+docker compose build          # Linux/x86
+# Mac ARM: docker buildx build --platform linux/amd64 -t hucebot:franka-humble .
+cd -
 
-# Build the MILE image, start the service, fetch artifacts
-make build
+# Build the MILE image and start the service
+# (trained models are committed in-tree under trained_models/)
+make build                    # Linux/x86
+# Mac ARM: DOCKER_DEFAULT_PLATFORM=linux/amd64 make build
 make up
-make fetch-artifacts   # downloads trained models from GitHub Release
 
 # Verify the environment is ready
 make tutorial-check    # expected: "tutorial-check OK — you're ready."
@@ -35,21 +39,26 @@ See [docs/tutorial/03-walkthrough.md](docs/tutorial/03-walkthrough.md) for the f
 | Make verb | What it does |
 |---|---|
 | `make tutorial-check` | Assert imports + artifacts are present |
-| `make tutorial-check-loss` | Green-light test for the MILE-loss exercise |
+| `make tutorial-check-scripted-intervener` | Test Exercise 1 (scripted intervener rule) |
+| `make tutorial-check-loss` | Test Exercise 2 (MILE loss) |
+| `make tutorial-check-intervention-model` | Test Exercise 3 (intervention model) |
 | `make tutorial-metaworld` | Part 1: MetaWorld peg-insert with synthetic expert |
 | `make tutorial-fake` | Part 2: Franka fake backend smoke test |
 | `make sim-up` | Start the multipanda MuJoCo stacking sim |
+| `make tutorial-teleop` | Part 3 practice: free-play keyboard teleop (no data saved) |
+| `make eval-base` | Evaluate the base policy (run before training) |
 | `make tutorial-collect-train` | Part 3: keyboard teleop → collect → train |
-| `make eval-base` | Evaluate the base policy (run before and after training) |
+| `make eval-mile` | Evaluate the MILE-trained policy (run after training) |
 
 **Docs:**
 - [00-setup.md](docs/tutorial/00-setup.md) — pre-session setup (homework)
 - [01-concepts.md](docs/tutorial/01-concepts.md) — 5-min MILE primer
-- [02-loss-exercise.md](docs/tutorial/02-loss-exercise.md) — implement the MILE loss
-- [03-walkthrough.md](docs/tutorial/03-walkthrough.md) — full tutorial flow
+- [03-walkthrough.md](docs/tutorial/03-walkthrough.md) — full tutorial flow (start here on session day)
+- [02a-scripted-intervener.md](docs/tutorial/02a-scripted-intervener.md) — Exercise 1: scripted intervener
+- [02b-loss-exercise.md](docs/tutorial/02b-loss-exercise.md) — Exercise 2: implement the MILE loss
+- [02c-intervention-model.md](docs/tutorial/02c-intervention-model.md) — Exercise 3: design the intervention model
 - [04-teleop.md](docs/tutorial/04-teleop.md) — keyboard / gamepad reference
 - [05-troubleshooting.md](docs/tutorial/05-troubleshooting.md) — FAQ
-- [06-instructor-runbook.md](docs/tutorial/06-instructor-runbook.md) — instructor/staff guide
 
 ---
 
@@ -97,6 +106,6 @@ The system jointly trains two networks and deploys only the policy:
 - **`mile/computational_model.py`** — probit intervention model; `COST_LOOKUP` maps each env to `[cost, cdf_scale]`.
 - **`mile/algorithm.py`** — `InterventionTrainer` jointly trains policy π_θ and mental model π̃_ξ. Loss = BCE on ν + Gaussian NLL of human action on ν=1 steps.
 - **`mile_franka/`** — Franka adaptation: `FrankaEnv`, `RobotBackend` ABC, `AprilTagPoseSource`, `KeyboardDevice` / `JoystickDevice`, `Collector`, tutorial scaffolding.
-- **`scripts/train_mile.py`** — offline and iterative training modes. `scripts/tutorial_train.py` injects the participant's loss before training.
+- **`scripts/train_mile.py`** — offline and iterative training modes. `scripts/tutorial_train.py` injects the participant's loss, intervention model, and scripted intervener (or their answer keys) before training.
 
 Config files: `config/franka_sim.yaml` (sim, joystick), `config/franka_real.yaml` (real FR3), `config/tutorial_metaworld.yaml` (Part 1), `config/tutorial_franka.yaml` (Part 3).

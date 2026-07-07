@@ -1,51 +1,67 @@
 # MILE Tutorial — Pre-Session Setup (Homework)
 
-This guide walks you through the one-time setup needed before the 2-hour summer-school tutorial. **Do this at home**, not at the venue. Setup takes 30–60 minutes depending on your internet and hardware; the longest step is the docker image build (∼20 min on a typical laptop with GPU).
+This guide walks you through the one-time setup needed before the 2-hour summer-school tutorial. **Do this at home**, not at the venue. Setup takes 30–60 minutes on Linux/x86 and up to 90 minutes on Mac ARM.
 
 **Goal:** your laptop is ready to run the tutorial when you walk in. All four parts (MetaWorld → Franka fake → Franka sim → Franka real) will work seamlessly from one docker image.
+
+> **Mac (Apple Silicon) users:** both the `multipanda_ros2` base and the MILE image target `linux/amd64`. Your machine will build and run them under Rosetta 2 emulation. Everything works — training runs on CPU, build takes longer. Follow the Mac-specific callouts below.
 
 ---
 
 ## Prerequisites
 
-Check that your machine meets these requirements **before** starting:
+### Linux (Ubuntu 22.04+) — recommended
 
-- **OS:** Ubuntu 22.04 LTS or newer
 - **GPU:** NVIDIA GPU (e.g., RTX 3060+) with driver ≥525
-  - Test: `nvidia-smi` (should print driver version and GPU list)
-  - No GPU? [Pair up](#for-weaker-laptops-pair-up) with someone or use a venue tower
-- **Docker & Compose:**
-  - Docker 20.10+ and Compose plugin (v2.5+)
-  - Test: `docker compose --version` (should show `Docker Compose version 2.x.x` or newer)
+  - Test: `nvidia-smi`
+  - No GPU? Pair up with someone or use a venue tower — CPU training is ~5× slower
+- **Docker & Compose:** Docker 20.10+ and Compose plugin v2.5+
+  - Test: `docker compose --version`
   - Not installed? [Install Docker](https://docs.docker.com/engine/install/ubuntu/) and [Compose](https://docs.docker.com/compose/install/linux/)
-- **Disk space:** at least 50–100 GB free
-  - Check: `df -h /` (look at the "Available" column)
-- **Internet:** stable connection (∼2 GB download for the base image + artifacts)
-- **Ethernet recommended** for the venue real-robot session (WiFi can drop)
-- **GPU access:** your user can run docker with GPU support
-  - Test: `docker run --rm --gpus all ubuntu nvidia-smi` (should work without `sudo`)
-  - If it fails, run `sudo usermod -aG docker $USER && newgrp docker` then log back in
+- **Docker GPU access:** `docker run --rm --gpus all ubuntu nvidia-smi` must work without `sudo`
+  - If it fails: `sudo usermod -aG docker $USER && newgrp docker`
+- **Disk space:** ≥50 GB free (`df -h /`)
+- **Internet:** stable connection (~2 GB download)
+
+### Mac (Apple Silicon — M1/M2/M3/M4)
+
+- **Docker Desktop** 4.25+ with Rosetta emulation enabled:
+  1. Open Docker Desktop → Settings → **Features in development**
+  2. Enable **"Use Rosetta for x86/amd64 emulation on Apple Silicon"**
+  3. Apply & Restart
+- **Disk space:** ≥60 GB free (emulated layers are larger)
+- **No GPU passthrough** — training runs on CPU, which is fine for the tutorial
+- **Build time:** ~60–90 min total (vs ~25 min on Linux/x86 with GPU)
+- Set the default platform once so every `docker` command targets amd64:
+  ```bash
+  export DOCKER_DEFAULT_PLATFORM=linux/amd64
+  # Add to ~/.zshrc to persist across sessions
+  echo 'export DOCKER_DEFAULT_PLATFORM=linux/amd64' >> ~/.zshrc
+  ```
 
 ---
 
 ## Step 1: Verify prerequisites
 
-Before proceeding, confirm:
-
+**Linux:**
 ```bash
-# OS version
 lsb_release -a
-# Driver version
 nvidia-smi | head -3
-# Docker + Compose
 docker --version && docker compose --version
-# Disk space
 df -h /
-# Your user can use docker + GPU
 docker run --rm --gpus all ubuntu nvidia-smi
 ```
 
-**All commands should succeed.** If not, stop and fix before moving on.
+**Mac ARM:**
+```bash
+# Confirm Rosetta emulation is working
+docker run --rm --platform linux/amd64 ubuntu uname -m
+# Expected output: x86_64
+docker --version && docker compose --version
+df -h /
+```
+
+**All commands should succeed.** If not, fix before moving on.
 
 ---
 
@@ -60,18 +76,25 @@ This is your working directory for all subsequent steps.
 
 ---
 
-## Step 3: Build the hucebot base image (one-time, ∼10 min)
+## Step 3: Build the hucebot base image (one-time)
 
-The tutorial image is built on top of `hucebot:franka-humble`, which contains the Franka controller stack and ROS dependencies. You need to clone and build this base image once.
+The tutorial image is built on top of `hucebot:franka-humble`, which contains the Franka controller stack and ROS dependencies. The `multipanda_ros2` Dockerfile explicitly targets `linux/amd64` — Rosetta handles this transparently on Mac.
 
 ```bash
 # Clone the hucebot repository (in a sibling directory)
 cd ..
 git clone https://github.com/hucebot/multipanda_ros2.git
 cd multipanda_ros2
+```
 
-# Build the base image (this will take ∼10 minutes)
+**Linux (∼10 min):**
+```bash
 docker compose build
+```
+
+**Mac ARM (∼40–60 min):**
+```bash
+docker buildx build --platform linux/amd64 -t hucebot:franka-humble .
 ```
 
 **Expected output:** final line should say `Successfully tagged hucebot:franka-humble` (or similar).
@@ -83,12 +106,16 @@ cd ../mile-franka-tutorial
 
 ---
 
-## Step 4: Build the MILE tutorial image (∼15–25 min)
+## Step 4: Build the MILE tutorial image
 
-Now build the tutorial image on top of the hucebot base. This includes MetaWorld, MILE, and all Franka dependencies in a single image.
-
+**Linux (∼15–25 min):**
 ```bash
 make build
+```
+
+**Mac ARM (∼20–30 min, after the base image is done):**
+```bash
+DOCKER_DEFAULT_PLATFORM=linux/amd64 make build
 ```
 
 **Expected output:** final line should say something like `Successfully tagged mile:franka-humble`. If you see build errors, [check troubleshooting](#troubleshooting).
@@ -232,6 +259,28 @@ If it persists, check `docker logs mile_sim` for errors.
 ### `tutorial-check` shows missing artifacts
 
 If `trained_models/` files are missing, re-clone the repository — the models are committed in-tree.
+
+### Mac ARM: `exec format error` or `no matching manifest`
+
+The image was not built for `linux/amd64`. Confirm `DOCKER_DEFAULT_PLATFORM=linux/amd64` is set and rebuild:
+```bash
+make down
+DOCKER_DEFAULT_PLATFORM=linux/amd64 make build
+make up
+```
+
+### Mac ARM: build hangs or is extremely slow
+
+Rosetta emulation is CPU-bound. The hucebot base build compiles MuJoCo, libfranka, and a full ROS workspace — 60–90 min total is normal. Run the build overnight if needed. Once built, the image is cached and restarts are fast.
+
+### Mac ARM: `sim-gui` window does not open
+
+X11 forwarding is not available by default on macOS. Install [XQuartz](https://www.xquartz.org/) and run:
+```bash
+xhost +localhost
+# Then in docker-compose.yml, set DISPLAY=host.docker.internal:0
+```
+Alternatively, skip `sim-gui` entirely — `make eval-base` and `make tutorial-collect-train` run headless.
 
 ---
 

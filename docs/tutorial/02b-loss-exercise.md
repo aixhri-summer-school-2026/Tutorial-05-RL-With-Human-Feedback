@@ -1,4 +1,4 @@
-# Task G3: The MILE Loss Function
+# The MILE Loss Function
 
 ## The Problem
 
@@ -117,62 +117,22 @@ If your implementation is incomplete or incorrect when you run `make tutorial-me
 
 This means you never have to manually patch your code — the training harness handles it. However, **we encourage you to complete the implementation yourself** so you understand the loss before moving forward.
 
-## Worked Explanation (After Attempting)
-
-Here is the structure of the correct solution:
-
-```python
-def mile_cont_loss_fn(intervention_prob, mu, log_std, ground_truth_action,
-                      ground_truth_intervention, LAMBDA1=1.0, LAMBDA2=1.0,
-                      reduction="mean"):
-    # Step 1: Discrete loss — NLL of the intervention binary classifier
-    pred_probs = torch.clamp(intervention_prob, 1e-7, 1 - 1e-7)
-    discrete_loss = F.nll_loss(torch.log(pred_probs), ground_truth_intervention, 
-                               reduction=reduction)
-    
-    # Step 2: Continuous loss — Gaussian NLL, but ONLY for ν=1 steps
-    # Create mask: intervention==1 AND intervention_prob[:,-1] > 0
-    idx = torch.logical_and(ground_truth_intervention == 1, intervention_prob[:, -1] > 0.0)
-    
-    if idx.sum() == 0:
-        # No intervention steps; no continuous loss to compute
-        continuous_loss = torch.tensor(0.0).to(device)
-    else:
-        # Build a Gaussian distribution for the subset of intervention steps
-        dist = D.Normal(mu[idx], log_std[idx].exp())
-        # Compute log-likelihood of the human action under this distribution
-        log_prob = sum_independent_dims(dist.log_prob(ground_truth_action[idx]))
-        # Take the negative mean (NLL = -log-likelihood)
-        continuous_loss = -log_prob.mean()
-    
-    # Step 3: Combine with weights
-    loss = LAMBDA1 * continuous_loss + LAMBDA2 * discrete_loss
-    return loss, continuous_loss, discrete_loss
-```
-
-### Why the ν=1 Mask?
+## Why the ν=1 Mask?
 
 In MILE, the human's action is only meaningful when they intervene. If the human doesn't intervene (ν=0), we don't know what action they would have taken, so we shouldn't train on it. The mask ensures:
 
 1. **We only see intervention examples** — `ground_truth_intervention == 1`
-2. **We only predict when the model thinks it's plausible** — `intervention_prob[:, -1] > 0.0` (the log-space check prevents numerical issues)
+2. **We only predict when the model thinks it's plausible** — `intervention_prob[:, -1] > 0.0` (prevents numerical issues in log-space)
 
-If all samples are non-interventions (ν=0), the continuous loss is zero, which makes sense: no intervention data means no action predictions to make.
+If all samples in the batch are non-interventions (ν=0), the continuous loss is zero — correct, because no intervention data means nothing to imitate.
 
-### Imports You'll Need
+## Imports You'll Need
 
-Your implementation should import (already present in the file):
-- `torch`
-- `torch.distributions as D`
-- `torch.nn.functional as F`
+Already present in the exercise file:
+- `torch`, `torch.distributions as D`, `torch.nn.functional as F`
 - `sum_independent_dims` from `stable_baselines3.common.distributions`
+- `device` defined at module level
 
-The `device` variable is already defined at the module level.
+## Next Step
 
-## Next Steps
-
-Once all three tests pass:
-1. Commit your work (optional; the trained model saves automatically)
-2. Move on to **[03-walkthrough.md — MetaWorld](03-walkthrough.md)** to watch your loss train a policy
-
-If you get stuck or are short on time, no worries — the answer key will apply when you train, and you can learn by reviewing `mile_franka/tutorial/_loss_solution.py` afterward.
+→ **[02c-intervention-model.md](02c-intervention-model.md)**: Exercise 3 — design p(ν=1 | state).

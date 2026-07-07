@@ -87,6 +87,26 @@ git checkout trained_models/
 
 ---
 
+## Expected (Harmless) Output
+
+### ⚠️ iox-roudi crash message on every command
+
+**Every `make` command prints something like this before the actual output:**
+```
+Error: Could not set file ACL.
+[Error]: ICEORYX error! MEPOO__SEGMENT_COULD_NOT_APPLY_POSIX_RIGHTS_TO_SHARED_MEMORY
+terminate called without an active exception
+scripts/in_container_env.sh: line 16: 44 Aborted ... iox-roudi
+```
+
+**This is normal. Ignore it.**
+
+**Why:** `in_container_env.sh` tries to start a fresh `iox-roudi` (the DDS middleware daemon) before each command. Inside the container, `iox-roudi` is already running as the container's main process (started in `docker-compose.yml`). The second instance fails to claim shared memory — by design. The running daemon stays healthy; only the redundant startup attempt crashes. Everything after the error message runs correctly.
+
+**How to confirm the real command worked:** look at what follows the crash lines. If you see `tutorial-check OK — you're ready.` or your training output, it worked.
+
+---
+
 ## Training & Data Collection
 
 ### ❌ `make tutorial-collect-train` fails immediately

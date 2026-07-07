@@ -17,23 +17,22 @@ That's it. ν is just a binary label on each step of data: "human acted here" or
 
 ## The intervention model: p(ν=1|s)
 
-MILE doesn't know in advance when you (the human) will intervene. So it learns to *predict* when a human would intervene, given just the current state s.
+MILE doesn't know in advance when you (the human) will intervene. So it needs a way to *predict* when a human would intervene, given just the current state s.
 
 This is the **intervention model**: p(ν=1|s) — the probability that you'd step in right now.
 
-### How does it predict this?
+### What inputs do you have?
 
-It uses a **probit model**, which compares the robot's current action plan against what you (the human) think it should do. The model says: "if the robot and human agree on the action, the robot probably doesn't need help (low ν). If they disagree a lot, you probably will intervene (high ν)."
+You have access to two policy networks:
+- **The robot policy π_θ**: what the robot is currently planning to do.
+- **The mental model π̂_ξ**: the human's model of what the robot will do (what the human *expects*).
 
-### COST_LOOKUP: tuning when you ask for help
+A good intervention model should use the relationship between these two to predict when the human would step in. 
 
-The intervention decision isn't free. Asking for human help has a cost (your time, attention). So the model includes a **cost parameter** for each task—this is where `COST_LOOKUP` comes in.
+**Think about it before reading on:** when would a human want to intervene? What signals from the two distributions would tell you "this is a moment to step in"?
 
-For example:
-- `peg-insert-side-v2`: cost = 75 (fairly cheap to help; the human is trigger-happy)
-- `Franka-Stack-Sim-v0`: cost = 2 (helping is very cheap in sim)
-
-A lower cost means the robot asks for help sooner. A higher cost means the robot tries harder before asking. This lets you tune the method to match how humans *actually* intervene.
+> You'll design your own answer in **[02c-intervention-model.md](02c-intervention-model.md)**.  
+> We'll reveal how MILE actually computes p(ν=1|s) at the end of that exercise.
 
 ## Joint training: the policy π_θ and mental model π̂_ξ
 
@@ -91,6 +90,6 @@ All four parts run in one Docker image and use the *same* loss you implement.
 
 ## Next step
 
-You've got the concepts. Now it's time to implement the loss and see it work.
+You've got the concepts. Time to build it — three exercises, then watch it run.
 
-→ **[02-loss-exercise.md](02-loss-exercise.md)**: Let's code it up.
+→ **[02a-scripted-intervener.md](02a-scripted-intervener.md)**: Exercise 1 — when does the human step in?

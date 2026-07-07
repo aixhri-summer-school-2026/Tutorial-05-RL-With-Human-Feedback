@@ -1,6 +1,6 @@
 # MILE Tutorial — Hands-On Flow
 
-This is your step-by-step guide. **You've already completed the setup** (Sections 0–2). Now it's time to run the full MILE loop: from a synthetic expert (MetaWorld) through your own interventions (Franka sim) to the real robot.
+This is your step-by-step guide. By now you've set up Docker (`00-setup.md`), read the concepts (`01-concepts.md`), and implemented the three exercises (`02a` → `02b` → `02c`). Now it's time to run the full MILE loop: from a synthetic expert (MetaWorld) through your own interventions (Franka sim) to the real robot.
 
 **All commands run inside the container.** To start:
 ```bash
@@ -38,61 +38,16 @@ tutorial-check OK — you're ready.
 
 **If you see any `FAIL` or `MISSING`:** stop and call an instructor. Do not proceed.
 
-### Step 2: Read the concepts
+### Step 2: Read the concepts and complete the exercises
 
-Read **[01-concepts.md](01-concepts.md)** — it's the anchor for everything you're about to do:
+If you haven't already, work through:
 
-- **ν (nu):** the binary "did the human intervene?" flag on each timestep.
-- **The intervention model p(ν=1|s):** the robot's prediction of when you'll step in.
-- **Joint training:** the policy (what the robot executes) and the mental model (what you think it will do) train together.
-- **The loss you'll write:** BCE on ν + Gaussian NLL on ν=1 steps.
+1. **[01-concepts.md](01-concepts.md)** — 5-min MILE primer
+2. **[02a-scripted-intervener.md](02a-scripted-intervener.md)** — Exercise 1: when does the human step in?
+3. **[02b-loss-exercise.md](02b-loss-exercise.md)** — Exercise 2: implement the training objective
+4. **[02c-intervention-model.md](02c-intervention-model.md)** — Exercise 3: design p(ν=1 | state)
 
----
-
-## Implement the Loss
-
-**Goal:** Write `mile_cont_loss_fn` — the loss used by all parts.
-
-**File to edit:** (from inside the container)
-```bash
-nano mile_franka/tutorial/loss_exercise.py
-```
-
-Or open it in your favorite editor on the host and it'll sync into the container.
-
-**What to do:**
-
-Read the docstring and the **[02-loss-exercise.md](02-loss-exercise.md)** handout. You'll implement:
-
-1. **Discrete loss** (BCE): does the model predict the right intervention flag?
-2. **Continuous loss** (Gaussian NLL): when ν=1, does the model predict the human's action?
-3. **Combine them** with weights.
-
-The handout includes the math, tensor shapes, and a worked solution for reference.
-
-**Test your implementation:**
-
-```bash
-make tutorial-check-loss
-```
-
-**Expected output (if correct):**
-```
-test_loss_exercise.py::test_solution_matches_itself_known_values PASSED
-test_loss_exercise.py::test_candidate_matches_reference_when_implemented PASSED
-test_loss_exercise.py::test_continuous_term_only_uses_intervention_steps PASSED
-
-=== 3 passed ===
-```
-
-**If tests fail:** read the error, fix the bug, and re-run. Common issues:
-- Forgot to clamp the probabilities before taking log?
-- Masking only ν=1 steps for the continuous loss?
-- Combining with the right weights?
-
-**Stuck or out of time?**
-
-No worries — the answer key will auto-apply when you train, and you can review the solution in `mile_franka/tutorial/_loss_solution.py` later. Move on.
+All three auto-apply their answer keys when you train — you can move on even if incomplete.
 
 ---
 
@@ -106,9 +61,13 @@ No human involved — you're watching an *automated synthetic expert* intervene.
 make tutorial-metaworld
 ```
 
+**Duration:** ~5–8 min on GPU, ~12–20 min on CPU. If you see loss values scrolling, it's running — not stuck.
+
+> **Start sim-up in parallel:** while this trains, open a second terminal on your host and run `make sim-up`. That way the Franka sim is already booting when MetaWorld finishes.
+
 **What to expect:**
 
-The script prints verbose per-batch and per-epoch table logs, then a summary table at each evaluation checkpoint. Exact numbers vary by run (±0.2 is normal), but you should see the `success_rate` row **increase from Round 0 to Round 1**:
+The script first prints three `[tutorial]` lines confirming which implementations are active (yours or the answer key). Then per-batch and per-epoch loss tables scroll, followed by a summary at each evaluation checkpoint. Exact numbers vary by run (±0.2 is normal), but you should see the `success_rate` row **increase from Round 0 to Round 1**:
 
 ```
 Round: 0
@@ -134,6 +93,27 @@ If success does **not** increase at all, your loss may have a bug — re-run `ma
 **The key insight:** "Success improved from Round 0 to Round 1. I wrote the loss. My loss made this happen."
 
 This is your proof that the loss is correct *and* that MILE works. In the next step, you'll replace the synthetic expert with your own keyboard interventions.
+
+### Extension: Tune the Intervention Cost
+
+The intervention model uses two per-task parameters in `COST_LOOKUP` (`mile/computational_model.py`):
+
+```python
+COST_LOOKUP = {
+    'peg-insert-side-v2': [75, 200.0],
+    'Franka-Stack-Sim-v0': [2, 2.0],
+    ...
+}
+```
+
+`cost` shifts the CDF threshold: higher cost → human intervenes less often (policy needs to diverge more before p(ν=1|s) rises). `cdf_scale` controls the sharpness of the CDF transition.
+
+**Try it:** open `mile/computational_model.py` and change `'peg-insert-side-v2': [75, 200.0]` to `[150, 200.0]` (double the cost). Re-run `make tutorial-metaworld`. Does the success rate still improve? Does it improve faster or slower?
+
+**Questions to consider:**
+- How do you choose cost for a *new* task you've never run before?
+- If p(ν=1|s) is near 0 everywhere, what happens to the discrete loss term?
+- Is there a cost value that makes MILE equivalent to standard BC (just imitating interventions)?
 
 ---
 
@@ -387,6 +367,19 @@ This is the **sim→real transfer payoff**: the sim taught you how MILE works; t
 3. **You are the expert:** in MetaWorld, a synthetic expert improved the policy. In the sim and real-robot steps, *you* were the expert. MILE learns from human intuition — when you see the policy about to fail, you step in.
 
 4. **Joint training matters:** the policy and mental model train together. Your interventions teach both: the policy learns the right action, and the mental model learns when you'd intervene.
+
+**Extension: ablate the loss weights**
+
+Your combined loss is `λ₁ × NLL(action) + λ₂ × NLL(intervention)`. Both default to 1.0. Try these ablations in `config/tutorial_metaworld.yaml` (look for `lambda1`/`lambda2` under `train:`):
+
+| λ₁ | λ₂ | Expected effect |
+|----|----|-|
+| 1.0 | 1.0 | Baseline (default) |
+| 0.0 | 1.0 | Policy never learns from action corrections — only learns *when* humans step in |
+| 1.0 | 0.0 | Policy learns the right action but ignores the intervention flag — just BC on ν=1 steps |
+| 2.0 | 0.5 | Prioritize action prediction; softer intervention classifier |
+
+Which ablation do you expect to hurt most? Run it and find out.
 
 **Talking points (instructor will cover):**
 
