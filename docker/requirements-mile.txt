@@ -13,9 +13,15 @@ tensorboard
 pyspacemouse
 hidapi
 pupil-apriltags
-opencv-python-headless
+# Pinned: unpinned pip grabbed 5.0.0, which drops cv2.calibrateHandEye (needed by
+# scripts/calibrate_camera.py's eye-to-hand solve) despite having the >=4.7 aruco
+# CharucoDetector API our ChArUco detection also needs. 4.10 has both.
+opencv-python-headless==4.10.0.84
 moviepy
 # Optional OS-wide keyboard teleop (KeyboardDevice reader_backend="global"; default is
 # the focus-window "pygame" backend). The X11 backend pulls in python-xlib; needs a live
 # DISPLAY at runtime, not at import.
 pynput
+# ViveDevice's default reader (France-lab HTC Vive teleop); needs a running SteamVR at
+# import-call time, not at pip-install time.
+openvr

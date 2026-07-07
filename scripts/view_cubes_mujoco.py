@@ -345,9 +345,11 @@ def main():
     # real 5 cm blue/red cube geoms and making them look big and colourless.
     # Arm joint configuration is already shown by the per-link coloured spheres
     # drawn in the loop below, so the built-in markers are redundant anyway.
-    # Hide the left tabbed settings panel by default for an unobstructed view of
-    # the workspace (toggle back in-viewer with Tab if needed).
-    viewer = mujoco.viewer.launch_passive(model, data, show_left_ui=False)
+    # launch_passive's `show_left_ui` kwarg needs mujoco>=3.0; the twin is pinned
+    # to 2.3.7 (see docker/requirements-mile.txt), whose Handle has no programmatic
+    # panel toggle. Left tabbed settings panel starts visible -- hide it in-viewer
+    # with Tab if it's in the way.
+    viewer = mujoco.viewer.launch_passive(model, data)
 
     # Collect link body ids and joint qpos addresses for in-viewer joint markers.
     LINK_BODIES = [f"panda_link{i}" for i in range(1, 9)]  # link1..link8
@@ -399,30 +401,37 @@ def main():
             mujoco.mj_forward(model, data)
 
             # ---- in-viewer joint-config markers ----
-            scene = viewer.user_scn
-            # Clear user scene by resetting the geom counter.
-            scene.ngeom = 0
-            for jname, adr in _link_qadr.items():
-                # Place a small sphere on each link body, colour-coded by joint angle.
-                ji = int(jname.rsplit("joint", 1)[1]) - 1  # 0..6
-                body_name = LINK_BODIES[ji]
-                bid = _link_body_id.get(body_name)
-                if bid is None or bid < 0:
-                    continue
-                pos = data.xpos[bid].copy()
-                angle_deg = np.degrees(data.qpos[adr])
-                # Colour: green→0°, yellow→45°, red→≥90° (absolute deviation).
-                t = min(abs(angle_deg) / 90.0, 1.0)
-                rgba = [t, 1.0 - t, 0.0, 0.9]
-                mujoco.mjv_initGeom(
-                    scene.geoms[scene.ngeom],
-                    type=mujoco.mjtGeom.mjGEOM_SPHERE,
-                    size=[0.01, 0, 0],
-                    pos=pos,
-                    mat=np.eye(3, dtype=np.float64).ravel(),
-                    rgba=np.array(rgba, dtype=np.float32),
-                )
-                scene.ngeom += 1
+            # `user_scn` (a scene layer mj_forward/mjv_updateScene never touches,
+            # so markers persist across frames) needs mujoco>=3.0; the twin is
+            # pinned to 2.3.7 (see docker/requirements-mile.txt), whose Handle
+            # has no such layer. Skip the overlay there -- the arm mesh itself
+            # already renders the real joint angles, so this only drops the
+            # supplementary colour-coded indicator, not the twin's core view.
+            scene = getattr(viewer, "user_scn", None)
+            if scene is not None:
+                # Clear user scene by resetting the geom counter.
+                scene.ngeom = 0
+                for jname, adr in _link_qadr.items():
+                    # Place a small sphere on each link body, colour-coded by joint angle.
+                    ji = int(jname.rsplit("joint", 1)[1]) - 1  # 0..6
+                    body_name = LINK_BODIES[ji]
+                    bid = _link_body_id.get(body_name)
+                    if bid is None or bid < 0:
+                        continue
+                    pos = data.xpos[bid].copy()
+                    angle_deg = np.degrees(data.qpos[adr])
+                    # Colour: green→0°, yellow→45°, red→≥90° (absolute deviation).
+                    t = min(abs(angle_deg) / 90.0, 1.0)
+                    rgba = [t, 1.0 - t, 0.0, 0.9]
+                    mujoco.mjv_initGeom(
+                        scene.geoms[scene.ngeom],
+                        type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                        size=[0.01, 0, 0],
+                        pos=pos,
+                        mat=np.eye(3, dtype=np.float64).ravel(),
+                        rgba=np.array(rgba, dtype=np.float32),
+                    )
+                    scene.ngeom += 1
 
             viewer.sync()
 

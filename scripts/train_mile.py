@@ -263,10 +263,10 @@ def iterative_training(config):
             from mile_franka.teleop.joystick import JoystickDevice
             joystick_translation_scale = config['experiment'].get('joystick_translation_scale', 0.5)
             # Xbox 360: left-stick-forward=axis1(-=fwd), left-stick-left=axis0(-=left), right-stick-up=axis4(-=up)
-            # clutch=RB(5), gripper=A(0), done=Start(7)
+            # x/y inverted relative to raw stick direction; clutch=RB(5), gripper=A(0), done=Start(7)
             intervener = TeleopIntervener(JoystickDevice(
-                ax_x=1, ax_x_sign=-1.0,
-                ax_y=0, ax_y_sign=-1.0,
+                ax_x=1, ax_x_sign=1.0,
+                ax_y=0, ax_y_sign=1.0,
                 ax_z=4, ax_z_sign=-1.0,
                 clutch_button=5, gripper_button=0, done_button=7, discard_button=6,
                 gripper_toggle=True,
@@ -276,6 +276,12 @@ def iterative_training(config):
             from mile_franka.teleop.keyboard import KeyboardDevice
             kb_scale = config['experiment'].get('keyboard_translation_scale', 0.02)
             intervener = TeleopIntervener(KeyboardDevice(translation_scale=kb_scale))
+        elif which == 'vive':
+            from mile_franka.teleop.vive import ViveDevice
+            vive_scale = config['experiment'].get('vive_translation_scale', 1.0)
+            # HTC Vive wand: grip=segment toggle, menu=gripper toggle, trackpad=done,
+            # trigger=discard (see mile_franka/teleop/vive.py for the button mapping).
+            intervener = TeleopIntervener(ViveDevice(translation_scale=vive_scale))
         else:
             raise ValueError(f'Unknown intervener: {which}')
 

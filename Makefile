@@ -1,10 +1,11 @@
+MILE_REAL_STACK ?= multipanda             ## real controller stack: multipanda (default) or fr3; override per-invocation or export in your shell
 DC      := docker compose -f docker/docker-compose.yml
 ENVSH   := source scripts/in_container_env.sh
 # $(call RUN,cmd) — run cmd inside the sim container (non-interactive; usable from host or make shell)
 RUN      = $(DC) exec sim bash -lc '$(ENVSH) && $(1)'
 RUND     = $(DC) exec -d sim bash -lc '$(ENVSH) && $(1)'
 # Kill any leftover process still publishing to the arm (prior run or stale rclpy context).
-KILLCLIENTS = self=$$$$; pgrep -f "train_mile.py|eval_base_policy_(sim|real)|eval_mile|franka_sim_rollout_record|build_base_policy|collect_synthetic_interventions" | grep -vx $$self | xargs -r kill 2>/dev/null; sleep 2; true
+KILLCLIENTS = self=$$$$; pgrep -f "train_mile.py|eval_base_policy_(sim|real)|eval_expert_real|eval_mile|franka_sim_rollout_record|build_base_policy|collect_synthetic_interventions" | grep -vx $$self | xargs -r kill 2>/dev/null; sleep 2; true
 TS      := $(shell date -u +%Y%m%dT%H%M%S)
 DEMOS   ?= output_dir/franka/sim_demos_mediocre.npz   ## base-policy input; override: make base-policy DEMOS=path.npz
 GRIP_FORCE  ?= 40
@@ -12,10 +13,16 @@ CLOSE_WIDTH ?= 0.0
 OPEN_WIDTH  ?= 0.08
 # Resolve which gripper action is live and bail if none found.
 GRIP_NS = ns=$$(ros2 action list 2>/dev/null | grep -E "/grasp$$" | head -1 | sed "s|/grasp||"); if [ -z "$$ns" ]; then echo "No gripper action server found -- is the controller/sim running?"; exit 1; fi; echo "gripper: $$ns"
-FRANKA_CTR    ?= franka_ros2_humble
-ROBOT_IP      ?= 169.254.202.10
-LOAD_GRIPPER  ?= true
-FRANKA_SRC    := source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+MILE_CAMERA     ?= webcam                 ## camera driver: realsense or webcam (USB/UVC, e.g. Logitech); webcam here (no RealSense on this box)
+FRANKA_CTR      ?= multipanda        ## fr3 controller container name
+MULTIPANDA_CTR  ?= realtime_franka_humble  ## hucebot multipanda container name; override if yours differs
+ROBOT_IP        ?= 176.16.0.1               ## robot FCI IP; the enp2s0-facing address on this lab's dedicated robot subnet
+LOAD_GRIPPER    ?= true
+# ROS2 workspace path inside each controller container -- override if yours differs.
+FRANKA_WS       ?= /ros2_ws                  ## workspace path inside $(FRANKA_CTR)
+MULTIPANDA_WS   ?= /home/user/humble_ws      ## workspace path inside $(MULTIPANDA_CTR)
+FRANKA_SRC       = source /opt/ros/humble/setup.bash && source $(strip $(FRANKA_WS))/install/setup.bash && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+MULTIPANDA_SRC   = source /opt/ros/humble/setup.bash && source $(strip $(MULTIPANDA_WS))/install/setup.bash && export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 # tutorial-teleop and tutorial-collect-train need keyboard/stdin (pygame window,
 # keyboard intervener) and must be run from inside `make shell`. The guard below enforces this.
@@ -27,9 +34,9 @@ CONTAINER_GUARD = @test -d /home/user/mile-code || { echo "ERROR: Run 'make shel
   tutorial-metaworld eval-metaworld \
   tutorial-fake \
   sim-up sim-gui tutorial-teleop eval-base tutorial-collect-train eval-mile \
-  franka-up apriltag-up eval-real \
-  spacemouse-check joystick-check pose-test tune-cost \
-  real-home-smoke close-gripper open-gripper view-tags view-twin calibrate-camera franka-shell \
+  franka-up apriltag-up eval-real eval-expert-real \
+  spacemouse-check joystick-check vive-check pose-test tune-cost \
+  real-home-smoke close-gripper open-gripper view-tags view-twin calibrate-camera calibrate-intrinsics franka-shell \
   collect-mediocre collect-expert base-policy mile mile-real fetch-artifacts
 
 # ── Docker / session ──────────────────────────────────────────────────────────
@@ -106,15 +113,25 @@ eval-mile:                   ## Part 3: evaluate the MILE-trained policy in sim 
 # ── Tutorial: Part 4 — Real FR3 ───────────────────────────────────────────────
 # All callable from the host via docker exec.
 
-franka-up:                   ## launch the real FR3 controller stack (franka_ros2 container, CycloneDDS, foreground); override ROBOT_IP=.. LOAD_GRIPPER=false
-	@docker ps --format '{{.Names}}' | grep -qx $(FRANKA_CTR) || { echo "Container $(FRANKA_CTR) not running -- start it: docker compose -f ~/franka_ros2/docker-compose.yml up -d"; exit 1; }
-	docker exec -it $(FRANKA_CTR) bash -lc '$(FRANKA_SRC) && ros2 launch mile_franka_controllers mile_bringup.launch.py robot_ip:=$(ROBOT_IP) load_gripper:=$(LOAD_GRIPPER)'
+franka-up:                   ## launch / verify the real controller stack; MILE_REAL_STACK=multipanda (default) just checks $(MULTIPANDA_CTR) is up (nothing launched from here); =fr3 starts mile_bringup in $(FRANKA_CTR); override ROBOT_IP=.. LOAD_GRIPPER=false MULTIPANDA_CTR=..
+	@if [ "$(strip $(MILE_REAL_STACK))" = "multipanda" ]; then \
+	  docker ps --format '{{.Names}}' | grep -qx "$(strip $(MULTIPANDA_CTR))" \
+	    || { echo "Container $(MULTIPANDA_CTR) not running -- start it (from your multipanda_ros2 checkout): docker compose up -d"; exit 1; }; \
+	  echo "multipanda controller running ($(MULTIPANDA_CTR)) — nothing to launch from here"; \
+	else \
+	  docker ps --format '{{.Names}}' | grep -qx $(FRANKA_CTR) \
+	    || { echo "Container $(FRANKA_CTR) not running -- start it: docker compose -f ~/franka_ros2/docker-compose.yml up -d"; exit 1; }; \
+	  docker exec -it $(FRANKA_CTR) bash -lc '$(FRANKA_SRC) && ros2 launch mile_franka_controllers mile_bringup.launch.py robot_ip:=$(ROBOT_IP) load_gripper:=$(LOAD_GRIPPER)'; \
+	fi
 
-apriltag-up:                 ## launch realsense2_camera + apriltag_ros + calibration static tf (foreground); MILE_REAL_STACK=fr3|multipanda (default fr3)
-	$(DC) exec -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} -e MILE_CAMERA_CALIB sim bash -lc '$(ENVSH) && self=$$$$; pgrep -f "apriltag_realsense.launch.py|apriltag_node|realsense2_camera_node|static_transform_publisher.*camera_to_base" | grep -vx $$self | xargs -r kill 2>/dev/null; sleep 2; ros2 launch mile_franka/launch/apriltag_realsense.launch.py'
+apriltag-up:                 ## launch camera + apriltag_ros + calibration static tf (foreground); MILE_REAL_STACK=fr3|multipanda (default multipanda); MILE_CAMERA=realsense|webcam (default: $(MILE_CAMERA))
+	$(DC) exec -e MILE_REAL_STACK=$(MILE_REAL_STACK) -e MILE_CAMERA=$${MILE_CAMERA:-$(MILE_CAMERA)} -e MILE_CAMERA_CALIB sim bash -lc '$(ENVSH) && self=$$$$; pgrep -f "apriltag_realsense.launch.py|apriltag_webcam.launch.py|apriltag_node|realsense2_camera_node|usb_cam_node_exe|static_transform_publisher.*camera_to_base" | grep -vx $$self | xargs -r kill 2>/dev/null; sleep 2; if [ "$$MILE_CAMERA" = "webcam" ]; then ros2 launch mile_franka/launch/apriltag_webcam.launch.py; else ros2 launch mile_franka/launch/apriltag_realsense.launch.py; fi'
 
-eval-real:                   ## Part 4: evaluate policy on the real FR3; MILE_REAL_STACK=fr3|multipanda (default fr3); MILE_APPLY_SIM_GAINS=1 to track against the lab sim
-	$(DC) exec -e DISPLAY=$$DISPLAY -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} -e MILE_CONTROLLER -e MILE_GRASP_ACTION -e MILE_APPLY_SIM_GAINS sim bash -lc '$(ENVSH) && echo "real stack=$${MILE_REAL_STACK:-fr3} RMW=$$RMW_IMPLEMENTATION"; $(KILLCLIENTS); python3 scripts/eval_base_policy_real.py'
+eval-real:                   ## Part 4: evaluate policy on the real FR3; MILE_REAL_STACK=fr3|multipanda (default multipanda); MILE_CAMERA=realsense|webcam (default: $(MILE_CAMERA)); MILE_APPLY_SIM_GAINS=1 to track against the lab sim
+	$(DC) exec -e DISPLAY=$$DISPLAY -e MILE_REAL_STACK=$(MILE_REAL_STACK) -e MILE_CAMERA=$${MILE_CAMERA:-$(MILE_CAMERA)} -e MILE_CONTROLLER -e MILE_GRASP_ACTION -e MILE_APPLY_SIM_GAINS sim bash -lc '$(ENVSH) && echo "real stack=$(MILE_REAL_STACK) RMW=$$RMW_IMPLEMENTATION"; $(KILLCLIENTS); python3 scripts/eval_base_policy_real.py'
+
+eval-expert-real:            ## evaluate the scripted expert policy (not a learned policy) on the real FR3; same prereqs as eval-real; MILE_REAL_STACK=fr3|multipanda (default multipanda); MILE_CAMERA=realsense|webcam (default: $(MILE_CAMERA)); MILE_APPLY_SIM_GAINS=1 to track against the lab sim; EPISODES/MAX_STEPS override defaults
+	$(DC) exec -e DISPLAY=$$DISPLAY -e MILE_REAL_STACK=$(MILE_REAL_STACK) -e MILE_CAMERA=$${MILE_CAMERA:-$(MILE_CAMERA)} -e MILE_CONTROLLER -e MILE_GRASP_ACTION -e MILE_APPLY_SIM_GAINS sim bash -lc '$(ENVSH) && echo "real stack=$(MILE_REAL_STACK) RMW=$$RMW_IMPLEMENTATION"; $(KILLCLIENTS); python3 scripts/eval_expert_real.py --episodes $${EPISODES:-5} --max_steps $${MAX_STEPS:-600}'
 
 # ── Debug / development ────────────────────────────────────────────────────────
 # Diagnostic and hardware-check tools. Not needed for the tutorial flow.
@@ -124,6 +141,9 @@ spacemouse-check:            ## print live SpaceMouse deflection (Ctrl-C to stop
 
 joystick-check:              ## print live gamepad axes/buttons (Ctrl-C to stop)
 	$(call RUN,python3 scripts/joystick_check.py)
+
+vive-check:                   ## print live Vive controller position/buttons (Ctrl-C to stop)
+	$(call RUN,python3 scripts/vive_check.py)
 
 pose-test:                   ## run pose-layer unit tests (no ROS/hardware needed)
 	$(call RUN,python3 -m pytest tests/test_calibration.py tests/test_apriltag_pose.py tests/test_ros_posestamped.py -v)
@@ -136,8 +156,8 @@ tune-cost:                   ## tune MILE intervention cost/scale from collected
 	  --cost_grid $${COST_GRID:-110:170:5} \
 	  --scale_grid $${SCALE_GRID:-125,150,175,200})
 
-real-home-smoke:             ## operator-gated real FR3 home + small Cartesian square; STEP=0.025 by default; MILE_REAL_STACK=fr3|multipanda (default fr3)
-	$(DC) exec -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} -e MILE_APPLY_SIM_GAINS -e MILE_CONTROLLER -e MILE_SUBSTEP_M sim bash -lc '$(ENVSH) && $(KILLCLIENTS); python3 scripts/franka_real_home_smoke.py --step $${STEP:-0.1}'
+real-home-smoke:             ## operator-gated real FR3 home + small Cartesian square; STEP=0.025 by default; MILE_REAL_STACK=fr3|multipanda (default multipanda)
+	$(DC) exec -e MILE_REAL_STACK=$(MILE_REAL_STACK) -e MILE_APPLY_SIM_GAINS -e MILE_CONTROLLER -e MILE_SUBSTEP_M sim bash -lc '$(ENVSH) && $(KILLCLIENTS); python3 scripts/franka_real_home_smoke.py --step $${STEP:-0.1}'
 
 close-gripper:               ## close the gripper; override GRIP_FORCE=.. CLOSE_WIDTH=..
 	$(DC) exec sim bash -lc '$(ENVSH) && $(GRIP_NS); ros2 action send_goal $$ns/grasp franka_msgs/action/Grasp "{width: $(CLOSE_WIDTH), speed: 0.05, force: $(GRIP_FORCE), epsilon: {inner: 0.08, outer: 0.08}}"'
@@ -145,10 +165,10 @@ close-gripper:               ## close the gripper; override GRIP_FORCE=.. CLOSE_
 open-gripper:                ## open the gripper; override OPEN_WIDTH=..
 	$(DC) exec sim bash -lc '$(ENVSH) && $(GRIP_NS); ros2 action send_goal $$ns/grasp franka_msgs/action/Grasp "{width: $(OPEN_WIDTH), speed: 0.05, force: $(GRIP_FORCE), epsilon: {inner: 0.08, outer: 0.08}}"'
 
-view-tags:                   ## MJPEG stream with AprilTag overlay → http://localhost:8080 (needs apriltag-up); MILE_REAL_STACK=fr3|multipanda (default fr3)
-	$(DC) exec -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} sim bash -lc '$(ENVSH) && python3 -u scripts/view_camera_tags.py'
+view-tags:                   ## MJPEG stream with AprilTag overlay → http://localhost:8080 (needs apriltag-up); MILE_REAL_STACK=fr3|multipanda (default multipanda); MILE_CAMERA=realsense|webcam (default: $(MILE_CAMERA))
+	$(DC) exec -e MILE_REAL_STACK=$(MILE_REAL_STACK) -e MILE_CAMERA=$${MILE_CAMERA:-$(MILE_CAMERA)} sim bash -lc '$(ENVSH) && python3 -u scripts/view_camera_tags.py'
 
-view-twin:                   ## live MuJoCo digital twin of the real workspace (needs controller + apriltag-up; safe in parallel with mile-real/eval-real); MILE_REAL_STACK=fr3|multipanda (default fr3)
+view-twin:                   ## live MuJoCo digital twin of the real workspace (needs controller + apriltag-up; safe in parallel with mile-real/eval-real); MILE_REAL_STACK=fr3|multipanda (default multipanda); MILE_CAMERA=realsense|webcam (default: $(MILE_CAMERA))
 	@echo "Host prereq (once per login): xhost +local:root"
 	@if [ "$$DISPLAY" != "$${DISPLAY#localhost:}" ]; then \
 		echo "[view-twin] using host display :1 (SSH-forwarded $$DISPLAY unreachable from container)"; \
@@ -156,13 +176,32 @@ view-twin:                   ## live MuJoCo digital twin of the real workspace (
 	else \
 		TWIN_DISPLAY=$$DISPLAY; \
 	fi; \
-	$(DC) exec -e DISPLAY=$$TWIN_DISPLAY -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} sim bash -lc '$(ENVSH) && python3 scripts/view_cubes_mujoco.py'
+	$(DC) exec -e DISPLAY=$$TWIN_DISPLAY -e MILE_REAL_STACK=$(MILE_REAL_STACK) -e MILE_CAMERA=$${MILE_CAMERA:-$(MILE_CAMERA)} sim bash -lc '$(ENVSH) && python3 scripts/view_cubes_mujoco.py'
 
-calibrate-camera:            ## eye-to-hand camera calibration → MJPEG preview at http://localhost:8080 (needs controller + apriltag-up); MILE_REAL_STACK=fr3|multipanda (default fr3)
-	$(DC) exec -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} -e MILE_CAMERA_CALIB -e PYTHONUNBUFFERED=1 sim bash -lc '$(ENVSH) && python3 -u scripts/calibrate_camera.py'
+calibrate-camera:            ## eye-to-hand camera calibration → MJPEG preview at http://localhost:8080 (needs controller + apriltag-up); MILE_REAL_STACK=fr3|multipanda (default multipanda); MILE_CAMERA=realsense|webcam (default: $(MILE_CAMERA)); board: CHECKER_SIZE/CHECKER_SQUARE/CHARUCO_MARKER/ARUCO_DICT (same vars as calibrate-intrinsics)
+	$(DC) exec -e MILE_REAL_STACK=$(MILE_REAL_STACK) -e MILE_CAMERA=$${MILE_CAMERA:-$(MILE_CAMERA)} -e MILE_CAMERA_CALIB -e PYTHONUNBUFFERED=1 sim bash -lc '$(ENVSH) && python3 -u scripts/calibrate_camera.py \
+	  --squares_x $(word 1,$(subst x, ,$(CHECKER_SIZE))) --squares_y $(word 2,$(subst x, ,$(CHECKER_SIZE))) \
+	  --square_length $(CHECKER_SQUARE) --marker_length $(CHARUCO_MARKER) \
+	  --dict_name DICT_$$(echo $(ARUCO_DICT) | tr a-z A-Z)'
 
-franka-shell:                ## open a shell in the franka_ros2 container (env + CycloneDDS sourced)
-	docker exec -it $(FRANKA_CTR) bash -lc '$(FRANKA_SRC) && exec bash'
+CHECKER_PATTERN ?= charuco             ## 'chessboard', 'circles', 'acircles', or 'charuco' (default here — this lab's board)
+CHECKER_SIZE    ?= 11x8                ## chessboard: *internal* corners, cols x rows (not squares). charuco: squares_x x squares_y (squares, not corners). Override to match your board
+CHECKER_SQUARE  ?= 0.015               ## square edge length in metres; override to match your board
+CHARUCO_MARKER  ?= 0.011               ## ArUco marker edge length in metres; only used when CHECKER_PATTERN=charuco
+ARUCO_DICT      ?= 4x4_50              ## ArUco dictionary: aruco_orig | {4x4,5x5,6x6,7x7}_{50,100,250,1000}; only used when CHECKER_PATTERN=charuco
+
+calibrate-intrinsics:        ## webcam-only: intrinsic calibration GUI (needs apriltag-up MILE_CAMERA=webcam running + host X11: xhost +local:root); COMMIT in the GUI writes straight to config/webcam_intrinsics.yaml
+	@echo "Host prereq (once per login): xhost +local:root"
+	@echo "In the GUI: sweep the board through the frame until all bars are green, click CALIBRATE, then SAVE, then COMMIT."
+	@echo "COMMIT writes straight to $${MILE_WEBCAM_INTRINSICS:-config/webcam_intrinsics.yaml} via usb_cam's set_camera_info service — no manual copy needed."
+	$(DC) exec -e DISPLAY=$$DISPLAY sim bash -lc '$(ENVSH) && export PYTHONPATH=/usr/lib/python3/dist-packages:$$PYTHONPATH && ros2 run camera_calibration cameracalibrator --pattern $(CHECKER_PATTERN) --size $(CHECKER_SIZE) --square $(CHECKER_SQUARE) --charuco_marker_size $(CHARUCO_MARKER) --aruco_dict $(ARUCO_DICT) --ros-args --remap image:=/camera/image_raw --remap camera:=/camera'
+
+franka-shell:                ## shell in the controller container; MILE_REAL_STACK=multipanda (default) → $(MULTIPANDA_CTR), =fr3 → $(FRANKA_CTR); override FRANKA_WS/MULTIPANDA_WS if the workspace path differs
+	@if [ "$(strip $(MILE_REAL_STACK))" = "multipanda" ]; then \
+	  docker exec -it $(MULTIPANDA_CTR) bash -lc '$(MULTIPANDA_SRC) && exec bash'; \
+	else \
+	  docker exec -it $(FRANKA_CTR) bash -lc '$(FRANKA_SRC) && exec bash'; \
+	fi
 
 # ── Data collection / offline training ────────────────────────────────────────
 # Used when building or replacing the bundled trained models; not needed for the tutorial.
@@ -191,8 +230,8 @@ base-policy:                 ## BC-train the base policy offline from mediocre d
 mile:                        ## full iterative MILE run in sim (config/franka_sim.yaml)
 	$(call RUN,cd scripts && python3 train_mile.py --config ../config/franka_sim.yaml)
 
-mile-real:                   ## full iterative MILE run on the real FR3 (needs controller + apriltag-up); MILE_REAL_STACK=fr3|multipanda (default fr3); MILE_APPLY_SIM_GAINS=1 to track against the lab sim
-	$(DC) exec -e MILE_REAL_STACK=$${MILE_REAL_STACK:-fr3} -e MILE_APPLY_SIM_GAINS sim bash -lc '$(ENVSH) && $(KILLCLIENTS); cd scripts && python3 train_mile.py --config ../config/franka_real.yaml'
+mile-real:                   ## full iterative MILE run on the real FR3 (needs controller + apriltag-up); MILE_REAL_STACK=fr3|multipanda (default multipanda); MILE_CAMERA=realsense|webcam (default: $(MILE_CAMERA)); MILE_APPLY_SIM_GAINS=1 to track against the lab sim
+	$(DC) exec -e MILE_REAL_STACK=$(MILE_REAL_STACK) -e MILE_CAMERA=$${MILE_CAMERA:-$(MILE_CAMERA)} -e MILE_APPLY_SIM_GAINS sim bash -lc '$(ENVSH) && $(KILLCLIENTS); cd scripts && python3 train_mile.py --config ../config/franka_real.yaml'
 
 fetch-artifacts:             ## verify bundled trained models are present (no download needed)
 	@echo "Trained models are included in the repository (trained_models/). No download needed."

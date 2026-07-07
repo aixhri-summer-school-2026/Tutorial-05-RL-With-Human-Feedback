@@ -1,9 +1,13 @@
 # Iceoryx RouDi shared-memory config for the MILE container.
 # Mempools sized for CycloneDDS discovery + user data messages.
-# Images (sensor_msgs/Image) are variable-length and may fall back to
-# UDP even with shared memory enabled — the shm transport shunts only
-# fixed-size types.  If that's the case, the kernel buffer fix (via
-# host sysctl net.core.rmem_max) is the actual image fix.
+# Images DO go through this shm transport (contrary to an earlier assumption here that
+# variable-length types fall back to UDP) — a 1920x1080 RGB8 frame is ~6.2MB and needs a
+# chunk from the largest (8388608-byte) pool below. RELIABLE + KEEP_LAST(100) on usb_cam's
+# image_raw publisher means a slow subscriber (e.g. a Python ChArUco/PnP detector running
+# behind realtime) can pin many in-flight 6MB+ chunks at once; with only 2-3 concurrent
+# subscribers (apriltag_node, calibrate_camera.py, ...) that exhausts a small pool fast and
+# aborts usb_cam_node_exe (MEPOO__MEMPOOL_GETCHUNK_POOL_IS_RUNNING_OUT_OF_CHUNKS). Sized
+# generously below for that reason, not because steady-state usage needs this many.
 [general]
 version = 1
 
@@ -35,4 +39,4 @@ count = 30
 
 [[segment.mempool]]
 size = 8388608
-count = 10
+count = 40

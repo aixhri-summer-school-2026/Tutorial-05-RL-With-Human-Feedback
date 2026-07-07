@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Live camera viewer with AprilTag overlay.
 
-Displays the RealSense color stream with detected AprilTag info overlaid.
-Two markers are drawn per tag so detection error and pose error are separable:
+Displays the camera color stream (RealSense or webcam) with detected AprilTag
+info overlaid. Two markers are drawn per tag so detection error and pose error
+are separable:
 
 - **Green** = the raw 2D detection from ``apriltag_ros`` (``/detections``):
   the pixel ``centre`` + ``corners`` the detector actually found in the image.
@@ -10,7 +11,7 @@ Two markers are drawn per tag so detection error and pose error are separable:
   camera intrinsics. A gap between green and magenta means PnP/pose error;
   a *common* offset of both from the tag means an intrinsics/stream mismatch.
 
-Intrinsics come from the RealSense factory calibration published on the
+Intrinsics come from the camera's own calibration published on the
 ``camera_info`` topic (not a guessed default and not the hand-eye file).
 
 The preview is served as an MJPEG stream over HTTP — open the URL printed
@@ -18,7 +19,8 @@ at startup in any browser.  No X11 / DISPLAY needed.
 
 **Prerequisites (all in-container, same DDS graph):**
 - hucebot multipanda_ros2 controller running (sim or real)
-- ``make apriltag-up`` or equivalent (realsense2_camera + apriltag_ros)
+- ``make apriltag-up`` or equivalent (camera driver + apriltag_ros; set
+  ``MILE_CAMERA=webcam|realsense`` to match, same as ``apriltag-up``)
 
 **Usage (inside ``make shell``):**
 
@@ -46,10 +48,15 @@ import numpy as np
 _rclpy = None
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_IMAGE_TOPIC = "/camera/camera/color/image_raw"
-_CAMERA_INFO_TOPIC = "/camera/camera/color/camera_info"
 _DETECTIONS_TOPIC = "/detections"
-_CAMERA_FRAME = "camera_color_optical_frame"
+if os.environ.get("MILE_CAMERA", "realsense").lower() == "webcam":
+    _IMAGE_TOPIC = "/camera/image_raw"
+    _CAMERA_INFO_TOPIC = "/camera/camera_info"
+    _CAMERA_FRAME = "camera_optical_frame"
+else:
+    _IMAGE_TOPIC = "/camera/camera/color/image_raw"
+    _CAMERA_INFO_TOPIC = "/camera/camera/color/camera_info"
+    _CAMERA_FRAME = "camera_color_optical_frame"
 def _default_base_frame() -> str:
     real_stack = os.environ.get("MILE_REAL_STACK", "multipanda").lower()
     if real_stack in ("fr3", "franka_ros2", "fr3_pose"):

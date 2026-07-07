@@ -6,6 +6,7 @@ toward the cube center; apriltag +z points out toward the camera).
 """
 from __future__ import annotations
 
+import os
 from typing import Sequence
 
 import numpy as np
@@ -60,10 +61,12 @@ from mile_franka.pose.base import ObjectPoseSource
 # tag36h11 ids from scripts/generate_cube_tags.py: 0 = bottom, 1 = top. apriltag_ros names
 # each tag's tf frame "<family>:<id>" (configurable in config/apriltag.yaml).
 TAG_FAMILY = "tag36h11"
-TAG_SIZE_M = 0.042  # measured black-border edge of the mounted tag (m); matches config/apriltag.yaml
+TAG_SIZE_M = 0.043  # measured black-border edge of the mounted tag (m); matches config/apriltag.yaml
 CUBE_TAG_IDS = {BOTTOM_CUBE: 0, TOP_CUBE: 1}
 CUBE_TAG_FRAMES = {name: f"{TAG_FAMILY}:{i}" for name, i in CUBE_TAG_IDS.items()}
-CAMERA_OPTICAL_FRAME = "camera_color_optical_frame"
+CAMERA_OPTICAL_FRAME = ("camera_optical_frame"
+                        if os.environ.get("MILE_CAMERA", "realsense").lower() == "webcam"
+                        else "camera_color_optical_frame")
 
 # A tf lookup: (base_frame, tag_frame) -> (translation[3], quat_xyzw[4][, age_sec]); raises
 # if no tf yet. The optional 3rd element is the transform's age (s) from its tf stamp; the

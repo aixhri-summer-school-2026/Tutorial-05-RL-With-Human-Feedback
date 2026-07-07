@@ -13,7 +13,7 @@ services:
                                            # and their stale DDS participants linger on the graph.
     network_mode: host
     # Keep off CPUs 0–3 which are reserved for the franka_ros2 RT control loop.
-    cpuset: "0-15"
+    # cpuset: "0-15"
     working_dir: /home/user/mile-code
     environment:
       - DISPLAY=:99                        # internal Xvfb (headless default). sim-gui overrides
@@ -24,6 +24,7 @@ services:
       - GALLIUM_DRIVER=llvmpipe
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - CYCLONEDDS_URI=file:///home/user/mile-code/config/cyclonedds.xml
+      - ROS_DOMAIN_ID=39                    # must match realtime_franka_humble's domain (~/git/multipanda_ros2/docker-compose.yml) so this container can see the real controller's nodes/topics/services over the DDS graph
       - NVIDIA_DRIVER_CAPABILITIES=all
     volumes:
       - ..:/home/user/mile-code            # live host edits in dev
@@ -33,7 +34,7 @@ services:
       - 'c 13:* rmw'                       # input (gamepad, SpaceMouse, etc.)
       - 'c 81:* rmw'                       # video4linux (RealSense UVC)
       - 'c 189:* rmw'                      # usb (RealSense libusb)
-    gpus: all                              # NVIDIA hardware GL + faster torch
+    # gpus: all                              # NVIDIA hardware GL + faster torch
     # Start Xvfb on :99 at container boot so ffmpeg x11grab has a local X server to record
     # (SSH-forwarded / remote DISPLAY values are unreachable by x11grab).  sim-gui overrides
     # DISPLAY per-exec with the host display for live viewing; the headless sim renders to :99.

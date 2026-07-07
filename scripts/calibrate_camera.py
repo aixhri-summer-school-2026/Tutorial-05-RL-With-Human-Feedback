@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive eye-to-hand camera calibration for the third-person RealSense.
+"""Interactive eye-to-hand calibration for the third-person camera (RealSense or webcam).
 
 Captures (image, O_T_EE) pairs while the operator drives the arm to varied poses,
 detects a ChArUco board mounted on the gripper in each image, runs
@@ -7,7 +7,8 @@ detects a ChArUco board mounted on the gripper in each image, runs
 
 **Prerequisites (all in-container, all on the same DDS graph):**
 - hucebot multipanda_ros2 controller running on the FR3 (or sim)
-- ``make apriltag-up`` or equivalent (realsense2_camera publishing color images)
+- ``make apriltag-up`` or equivalent (camera driver publishing images; set
+  ``MILE_CAMERA=webcam|realsense`` to match, same as ``apriltag-up``)
 - A ChArUco board rigidly attached to the gripper, facing the camera
 
 The live preview is served as an **MJPEG stream over HTTP** (open the printed URL
@@ -65,13 +66,20 @@ def _default_base_frame() -> str:
         return "fr3_link0"
     return "panda_link0"
 
-# Default ChArUco board: 5×7 squares, 40 mm square side, 30 mm marker side.
-# Tune these to match the physical board on the gripper.
-_DEFAULT_BOARD = dict(squares_x=14, squares_y=9, square_length=0.0195,
-                      marker_length=0.014625, dict_name="DICT_5X5_100")
+# Default ChArUco board: 11x8 squares, 15 mm square side, 11 mm marker side, DICT_4X4_50 —
+# this lab's board on the gripper. Must match CHECKER_SIZE/CHECKER_SQUARE/CHARUCO_MARKER/
+# ARUCO_DICT in the Makefile (make calibrate-camera passes them through as CLI overrides;
+# these are only the fallback for running this script directly, outside make).
+_DEFAULT_BOARD = dict(squares_x=11, squares_y=8, square_length=0.015,
+                      marker_length=0.011, dict_name="DICT_4X4_50")
 
-# Topics — must match the running realsense + controller.
-_IMAGE_TOPIC = "/camera/camera/color/image_raw"
+# Topics — must match the running camera driver (realsense or webcam) + controller.
+if os.environ.get("MILE_CAMERA", "realsense").lower() == "webcam":
+    _IMAGE_TOPIC = "/camera/image_raw"
+    _CAMERA_FRAME = "camera_optical_frame"
+else:
+    _IMAGE_TOPIC = "/camera/camera/color/image_raw"
+    _CAMERA_FRAME = "camera_color_optical_frame"
 # Primary EE topic: /cartesian_impedance/cartesian_pos_curr (custom_cartesian_impedance_controller,
 # multipanda sim). On the real FR3 stack (cartesian_pose_target_controller) this topic exists but
 # publishes a stale value; the live EE pose comes from franka_robot_state_broadcaster instead.
@@ -385,15 +393,21 @@ def main() -> None:
     _js_topic = getattr(args, "joint_states_topic", "/joint_states")
     node.create_subscription(JointState, _js_topic, _js_cb, 1)
 
-    # Use the RealSense factory intrinsics (camera_info), not the 640x480 placeholder
+    # Use the camera's own published intrinsics (camera_info), not the 640x480 placeholder
     # defaults: the colour stream runs at 1920x1080, so the wrong K would corrupt every
     # board pose and hence the hand-eye solve. msg.k is the 3x3 K, row-major. The CLI
-    # --fx/--fy/--cx/--cy values are a fallback if camera_info never arrives.
+    # --fx/--fy/--cx/--cy values are a fallback if camera_info never arrives, OR if it
+    # arrives but is degenerate — an uncalibrated usb_cam publishes fx=fy=0 until you run
+    # 'ros2 run camera_calibration cameracalibrator' for this webcam (see
+    # config/webcam_intrinsics.example.yaml). A zero/near-zero focal length would make
+    # every PnP solve garbage, so treat it the same as "never arrived".
     info_topic = args.image_topic.rsplit("/", 1)[0] + "/camera_info"
     _got_info = {"k": None}
 
     def _info_cb(msg):
-        _got_info["k"] = np.array(msg.k, dtype=np.float64).reshape(3, 3)
+        k = np.array(msg.k, dtype=np.float64).reshape(3, 3)
+        if k[0, 0] > 1.0 and k[1, 1] > 1.0:
+            _got_info["k"] = k
 
     node.create_subscription(CameraInfo, info_topic, _info_cb, 1)
     _t0 = time.time()
@@ -516,7 +530,7 @@ def main() -> None:
                 print(f"Saved {args.out}", flush=True)
                 print(f"camera_to_base:\n{cam2base}", flush=True)
                 print("static_transform_args: "
-                      f"{calib.static_transform_args(args.base_frame, 'camera_color_optical_frame')}",
+                      f"{calib.static_transform_args(args.base_frame, _CAMERA_FRAME)}",
                       flush=True)
                 break
 

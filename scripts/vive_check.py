@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Gamepad sanity check: print live axes/buttons. Blocks until Ctrl-C.
+"""Vive controller sanity check: print live position/buttons. Blocks until Ctrl-C.
 
-The whole gamepad path is blocked until this prints nonzero values when the sticks are
-pushed. Run inside the container via `make joystick-check`. Use `--fake` to exercise the
-read path with no controller attached.
+The whole Vive path is blocked until this prints nonzero deltas when the controller is
+moved during a segment. Run inside the container via `make vive-check`. Use `--fake` to
+exercise the read path with no SteamVR/controller attached.
 """
 import argparse
 import time
 
-from mile_franka.teleop.joystick import JoystickDevice
+from mile_franka.teleop.vive import ViveDevice
 
 
 def main() -> None:
@@ -19,19 +19,17 @@ def main() -> None:
 
     if args.fake:
         class Snap:
-            axes = [0.5, -0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-            buttons = [1, 0, 0, 0, 0, 1, 0, 0]
-        dev = JoystickDevice(reader=lambda: Snap())
+            position = [0.1, 0.0, 0.0]
+            inputs = {"trigger": 0.0, "menu_button": True, "grip_button": True,
+                      "trackpad_pressed": False}
+        dev = ViveDevice(reader=lambda: Snap())
         r = dev.read()
         print(f"[fake] action={r.action} intervene={r.intervene} done={r.done}")
         return
 
-    # Xbox 360: left-stick-forward=-x, left-stick-left=-y, right-stick-up=+z (axis4, -=up)
-    # RB=segment toggle, A=gripper, Start=done, Back=discard
-    dev = JoystickDevice(ax_x=1, ax_x_sign=1.0, ax_y=0, ax_y_sign=1.0,
-                         ax_z=4, ax_z_sign=-1.0, clutch_button=5, gripper_button=0,
-                         done_button=7, discard_button=6, gripper_toggle=True)
-    print("Xbox360: RB=segment  A=gripper  Start=done  Back=discard  Ctrl-C to stop")
+    # grip=segment toggle, menu=gripper toggle, trackpad=done, trigger=discard
+    dev = ViveDevice()
+    print("Vive: grip=segment  menu=gripper  trackpad=done  trigger=discard  Ctrl-C to stop")
     prev_intervene = False
     try:
         while True:

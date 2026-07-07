@@ -101,10 +101,17 @@ class ChArUcoBoard:
     @property
     def _board(self):
         import cv2
-        return cv2.aruco.CharucoBoard(
+        board = cv2.aruco.CharucoBoard(
             (self.squares_x, self.squares_y),
             self.square_length, self.marker_length,
             self._dictionary)
+        # OpenCV >= 4.7 changed the default marker layout within each ChArUco square
+        # ("legacy" vs new pattern). This lab's physical board was generated with the
+        # legacy layout — without this, CharucoDetector finds the individual ArUco
+        # markers fine but interpolateCornersCharuco silently returns zero corners,
+        # since it's looking for markers in the wrong sub-cell position.
+        board.setLegacyPattern(True)
+        return board
 
 
 @dataclass

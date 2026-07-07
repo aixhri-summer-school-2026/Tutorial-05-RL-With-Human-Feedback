@@ -21,7 +21,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 from mile_franka.pose.calibration import load_camera_calibration
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CALIB = (os.environ.get("MILE_CAMERA_CALIB")
          or os.path.join(REPO, "config", "camera_calib.yaml"))
 APRILTAG_CFG = os.path.join(REPO, "config", "apriltag.yaml")

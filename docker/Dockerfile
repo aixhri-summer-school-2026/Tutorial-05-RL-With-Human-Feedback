@@ -9,6 +9,8 @@ USER root
 # whole controller graph wedges. Verify both landed so the image can never ship without them.
 RUN apt-get update -qq && apt-get install -y --no-install-recommends xvfb ffmpeg \
         ros-humble-realsense2-camera \
+        ros-humble-usb-cam \
+        ros-humble-camera-calibration \
         ros-humble-apriltag-ros \
  && rm -rf /var/lib/apt/lists/* \
  && command -v Xvfb >/dev/null && command -v ffmpeg >/dev/null \
