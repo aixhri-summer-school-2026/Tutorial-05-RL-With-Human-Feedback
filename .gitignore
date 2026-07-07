@@ -42,11 +42,8 @@ docs/superpowers/
 docs/tutorial/TUTORIAL_REVIEW_REPORT.md
 docs/tutorial/06-instructor-runbook.md
 
-# Solution files — obfuscated locally but not shipped in the public release.
-# Instructors: add these from the private instructor package before running the tutorial.
-mile_franka/tutorial/_loss_solution.py
-mile_franka/tutorial/_intervention_model_solution.py
-mile_franka/tutorial/_scripted_intervener_solution.py
+# Instructor-only runbook — not for participants.
+docs/tutorial/06-instructor-runbook.md
 
 # IDE / tooling internals
 .claude/
