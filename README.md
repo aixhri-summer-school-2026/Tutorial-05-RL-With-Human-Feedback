@@ -13,28 +13,32 @@ Paper: https://liralab.usc.edu/mile/
 Everything runs inside a single Docker image built on top of hucebot's `franka-humble` base.
 
 ```bash
-# 0. Clone this tutorial repo and enter it. Everything below runs from here.
-git clone https://github.com/aixhri-summer-school-2026/Tutorial-05-RL-With-Human-Feedback.git
-cd Tutorial-05-RL-With-Human-Feedback
+# Pick a working directory to hold both repos side by side, and cd into it.
+mkdir -p ~/aixhri && cd ~/aixhri
+# You are now in: ~/aixhri
 
 # 1. One-time: build the hucebot base image `hucebot:franka-humble`.
 #    (linux/amd64; on Mac ARM, Rosetta emulates x86.)
-#    Clone into a *sibling* dir and build inside it, all in a subshell so
-#    your current shell stays in the MILE repo root — no `cd` back needed.
-(
-  git clone https://github.com/hucebot/multipanda_ros2 ../multipanda_ros2
-  cd ../multipanda_ros2
-  docker compose build          # Linux/x86 — produces the `hucebot:franka-humble` image
-  # Mac ARM: docker buildx build --platform linux/amd64 -t hucebot:franka-humble .
-)
+git clone https://github.com/hucebot/multipanda_ros2
+cd multipanda_ros2
+# You are now in: ~/aixhri/multipanda_ros2
+docker compose build          # Linux/x86 — produces the `hucebot:franka-humble` image
+# Mac ARM: docker buildx build --platform linux/amd64 -t hucebot:franka-humble .
 
-# 2. Build the MILE image (FROM hucebot:franka-humble) and start the service.
+# 2. Clone this tutorial repo (as a sibling of multipanda_ros2) and enter it.
+cd ~/aixhri
+# You are now in: ~/aixhri
+git clone https://github.com/aixhri-summer-school-2026/Tutorial-05-RL-With-Human-Feedback.git
+cd Tutorial-05-RL-With-Human-Feedback
+# You are now in: ~/aixhri/Tutorial-05-RL-With-Human-Feedback — run every command below from here.
+
+# 3. Build the MILE image (FROM hucebot:franka-humble) and start the service.
 #    (Trained models are committed in-tree under trained_models/.)
 make build                      # Linux/x86
 # Mac ARM: DOCKER_DEFAULT_PLATFORM=linux/amd64 make build
 make up                         # start the persistent `sim` container in the background
 
-# 3. Verify the environment is ready.
+# 4. Verify the environment is ready.
 make tutorial-check             # expected: "tutorial-check OK — you're ready."
 ```
 
