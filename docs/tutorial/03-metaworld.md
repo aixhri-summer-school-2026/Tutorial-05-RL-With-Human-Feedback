@@ -220,11 +220,16 @@ rounds/epochs so it finishes inside a session.
 
 ## Runtime & how to speed it up
 
-**The default `make tutorial-metaworld` (2 rounds) finishes in ~2.5 min** on this machine
-(RTX 5070, in-container) — startup ~6 s + initial eval ~5 s + 2 rounds × ~70 s. If you see
-loss tables scrolling, it's running, not stuck. On CPU (no GPU) expect ~3–5× longer.
+**The default `make tutorial-metaworld` (2 rounds) finishes in ~2.5 min** in-container on a
+modern desktop CPU — startup ~6 s + initial eval ~5 s + 2 rounds × ~70 s. If you see loss
+tables scrolling, it's running, not stuck.
 
-**Measured wall-clock (RTX 5070, in-container), scaling with rounds and eval size:**
+> **Note on GPU:** the image ships **CPU-only torch** on purpose — the MLP is tiny and the
+> real cost is MuJoCo env stepping + the intervention model's Monte-Carlo sampling, both
+> CPU-bound. The GPU (`gpus: all`) accelerates *rendering* (sim-gui), not training, so these
+> times don't change with a GPU. A slower CPU scales them roughly proportionally.
+
+**Measured wall-clock (in-container), scaling with rounds and eval size:**
 
 | | per round | 3-round total |
 |---|---|---|

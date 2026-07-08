@@ -1,6 +1,7 @@
 # One persistent MILE-on-multipanda service. `network_mode: host` shares the DDS graph with
-# the sim; an internal Xvfb (:99) provides the headless display. Device/GPU passthroughs are
-# declared but commented so France-day (SpaceMouse/camera/GPU) is config-only, not a rebuild.
+# the sim; an internal Xvfb (:99) provides the headless display. GPU passthrough (`gpus: all`)
+# is on by default for HW GL + faster torch (comment it out on Mac ARM / no NVIDIA GPU). The
+# RT CPU pinning (`cpuset`) stays commented — France-day only, config-only, not a rebuild.
 services:
   sim:
     build:
@@ -34,7 +35,8 @@ services:
       - 'c 13:* rmw'                       # input (gamepad, SpaceMouse, etc.)
       - 'c 81:* rmw'                       # video4linux (RealSense UVC)
       - 'c 189:* rmw'                      # usb (RealSense libusb)
-    # gpus: all                              # NVIDIA hardware GL + faster torch
+    gpus: all                              # NVIDIA hardware GL + faster torch
+                                           # (Mac ARM / no NVIDIA GPU: comment this line out — training falls back to CPU)
     # Start Xvfb on :99 at container boot so ffmpeg x11grab has a local X server to record
     # (SSH-forwarded / remote DISPLAY values are unreachable by x11grab).  sim-gui overrides
     # DISPLAY per-exec with the host display for live viewing; the headless sim renders to :99.

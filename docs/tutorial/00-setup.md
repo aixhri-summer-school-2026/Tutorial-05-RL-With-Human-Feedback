@@ -12,9 +12,12 @@ This guide walks you through the one-time setup needed before the 2-hour summer-
 
 ### Linux (Ubuntu 22.04+) — recommended
 
-- **GPU:** NVIDIA GPU (e.g., RTX 3060+) with driver ≥525
+- **GPU (recommended, not required):** NVIDIA GPU (e.g., RTX 3060+) with driver ≥525
   - Test: `nvidia-smi`
-  - No GPU? Pair up with someone or use a venue tower — CPU training is ~5× slower
+  - The GPU accelerates **rendering** (the live `sim-gui` MuJoCo viewer). Training runs on
+    **CPU** either way — the image ships CPU-only torch on purpose. No GPU? You can still run
+    everything headless with software rendering (`LIBGL_ALWAYS_SOFTWARE=1`); comment out
+    `gpus: all` in `docker/docker-compose.yml` so `make up` doesn't require the NVIDIA runtime.
 - **Docker & Compose:** Docker 20.10+ and Compose plugin v2.5+
   - Test: `docker compose --version`
   - Not installed? [Install Docker](https://docs.docker.com/engine/install/ubuntu/) and [Compose](https://docs.docker.com/compose/install/linux/)
@@ -68,7 +71,7 @@ df -h /
 ## Step 2: Clone the tutorial repository
 
 ```bash
-git clone https://github.com/rayray2002/mile-franka-tutorial.git
+git clone https://github.com/aixhri-summer-school-2026/Tutorial-05-RL-With-Human-Feedback.git mile-franka-tutorial
 cd mile-franka-tutorial
 ```
 

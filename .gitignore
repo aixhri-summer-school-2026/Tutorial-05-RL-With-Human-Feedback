@@ -38,12 +38,10 @@ scripts/franka_real_home_smoke.py
 # Dev planning docs (superpowers internal; not for tutorial participants)
 docs/superpowers/
 
-# Instructor-only / internal review docs (kept local, not published)
+# Instructor-only / internal review docs (kept local, not published on the release branch;
+# the instructor runbook lives on the `instructor` branch as 09-instructor-runbook.md)
 docs/tutorial/TUTORIAL_REVIEW_REPORT.md
-docs/tutorial/06-instructor-runbook.md
-
-# Instructor-only runbook — not for participants.
-docs/tutorial/06-instructor-runbook.md
+docs/tutorial/09-instructor-runbook.md
 
 # IDE / tooling internals
 .claude/

@@ -115,6 +115,6 @@ and training loop are unchanged.
    very differently.
 2. **Compare your loss** with `mile_franka/tutorial/_loss_solution.py`.
 3. **Adapt it to your own task.** MILE is task-agnostic; you'd swap the backend and pose source.
-4. **File issues / improvements** on the [repo](https://github.com/rayray2002/mile-franka-tutorial).
+4. **File issues / improvements** on the [repo](https://github.com/aixhri-summer-school-2026/Tutorial-05-RL-With-Human-Feedback).
 
 Thanks for building MILE end-to-end. Questions? Ask the instructors.
