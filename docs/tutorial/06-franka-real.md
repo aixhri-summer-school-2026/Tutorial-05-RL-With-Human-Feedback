@@ -117,5 +117,4 @@ and training loop are unchanged.
 3. **Adapt it to your own task.** MILE is task-agnostic; you'd swap the backend and pose source.
 4. **File issues / improvements** on the [repo](https://github.com/rayray2002/mile-franka-tutorial).
 
-Thanks for building MILE end-to-end. Questions? Ask the instructors — see the
-[instructor runbook](09-instructor-runbook.md) for the deeper reference.
+Thanks for building MILE end-to-end. Questions? Ask the instructors.

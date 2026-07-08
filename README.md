@@ -63,7 +63,6 @@ The tutorial runs in four parts (one doc each). Quick reference:
 - [06-franka-real.md](docs/tutorial/06-franka-real.md) — **Part 4:** MILE on the real FR3
 - [07-teleop.md](docs/tutorial/07-teleop.md) — keyboard / gamepad reference
 - [08-troubleshooting.md](docs/tutorial/08-troubleshooting.md) — FAQ
-- [09-instructor-runbook.md](docs/tutorial/09-instructor-runbook.md) — instructor reference
 
 ---
 
