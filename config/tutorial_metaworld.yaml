@@ -26,6 +26,10 @@ experiment:
   num_rounds: 2
   episodes_per_round: 1
   include_offline_dataset: false
+  # Continue a previous run instead of starting over: set to a run dir holding the saved
+  # policy/mental_model/accumulated_dataset (from scripts/ this is ../output_dir). Runs
+  # `num_rounds` MORE rounds. Overridable at the CLI: make tutorial-metaworld RESUME=../output_dir
+  resume_from: null
 
   validate:
     enabled: false

@@ -126,4 +126,4 @@ non-interventions (what the robot was allowed to do on its own) — using the
 ## Next Step
 
 Once the check passes (or you're ready to move on):
-→ **[03-walkthrough.md](03-walkthrough.md)** — run MetaWorld with all three exercises active.
+→ **[03-metaworld.md](03-metaworld.md)** — run MetaWorld with all three exercises active.

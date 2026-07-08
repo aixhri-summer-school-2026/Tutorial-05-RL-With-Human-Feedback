@@ -35,7 +35,7 @@ def test_candidate_matches_reference_when_implemented():
         C = _candidate()
         out = C(*_batch())
     except NotImplementedError:
-        pytest.skip("exercise not yet implemented (blank scaffold)")
+        pytest.fail("exercise not yet implemented — edit mile_franka/tutorial/loss_exercise.py")
     ref = REF(*_batch())
     for c, r in zip(out, ref):
         assert torch.allclose(c, r, atol=1e-6), "candidate loss != reference"

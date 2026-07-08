@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """Generate a printable sheet of AprilTag (tag36h11) markers for the cube-stacking task.
 
-US Letter paper, 300 DPI.  Print at 100% actual size — do NOT use "fit to page".
+300 DPI.  Print at 100% actual size — do NOT use "fit to page".
 
 Usage:
-    python scripts/generate_cube_tags.py
+    python scripts/generate_cube_tags.py          # US Letter (default)
+    python scripts/generate_cube_tags.py --a4     # A4
 
 Output:
-    mile_franka/assets/cube_tags_letter.png
+    mile_franka/assets/cube_tags_letter.png   (Letter)
+    mile_franka/assets/cube_tags_a4.png       (A4)
 
 Prints the tag_size value to pass to your AprilTag pose estimator.
 """
+import argparse
 import pathlib
 
-import numpy as np
 from PIL import Image, ImageDraw
 
 try:
@@ -25,8 +27,12 @@ except ImportError:
 DPI        = 300
 IN_TO_MM   = 25.4
 
-PAPER_W_IN = 8.5
-PAPER_H_IN = 11.0
+# paper sizes in mm
+PAPER_SIZES = {
+    "letter": (215.9, 279.4),   # 8.5 × 11 in
+    "a4":     (210.0, 297.0),
+}
+
 PADDING_MM = 10.0   # margin on all four sides
 GUTTER_MM  = 2.0    # gap between adjacent tag cells (for cutting guides)
 LABEL_MM   = 5.0    # text strip below each marker image
@@ -42,13 +48,17 @@ def mm2px(mm: float) -> int:
     return round(mm / IN_TO_MM * DPI)
 
 
-def in2px(inches: float) -> int:
-    return round(inches * DPI)
+# ── CLI ───────────────────────────────────────────────────────────────────────
+parser = argparse.ArgumentParser()
+parser.add_argument("--a4", action="store_true", help="Generate A4 sheet instead of US Letter")
+args = parser.parse_args()
 
+paper_name = "a4" if args.a4 else "letter"
+paper_w_mm, paper_h_mm = PAPER_SIZES[paper_name]
 
 # ── page and grid geometry ────────────────────────────────────────────────────
-page_w = in2px(PAPER_W_IN)   # 2550 px
-page_h = in2px(PAPER_H_IN)   # 3300 px
+page_w = mm2px(paper_w_mm)
+page_h = mm2px(paper_h_mm)
 
 cell   = mm2px(CUBE_MM)       # 591 px ≈ 50 mm  (one cube face)
 gutter = mm2px(GUTTER_MM)     #  24 px ≈  2 mm
@@ -70,14 +80,14 @@ oy = (page_h - grid_h) // 2
 
 
 # ── single-cell renderer ──────────────────────────────────────────────────────
-aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_APRILTAG_36h11)
+aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11)
 
 
 def make_cell(tag_id: int) -> Image.Image:
     marker_side = cell - lblh               # square marker image (below: label strip)
     m_x         = (cell - marker_side) // 2  # horizontal centering offset
 
-    raw      = cv2.aruco.drawMarker(aruco_dict, tag_id, marker_side)
+    raw      = cv2.aruco.generateImageMarker(aruco_dict, tag_id, marker_side)
     cell_img = Image.new("L", (cell, cell), 255)
     cell_img.paste(Image.fromarray(raw), (m_x, 0))
 
@@ -134,7 +144,7 @@ for row in range(n_rows + 1):
 
 # ── save ──────────────────────────────────────────────────────────────────────
 out = (pathlib.Path(__file__).resolve().parent.parent
-       / "mile_franka" / "assets" / "cube_tags_letter.png")
+       / "mile_franka" / "assets" / f"cube_tags_{paper_name}.png")
 sheet.save(str(out), dpi=(DPI, DPI))
 
 

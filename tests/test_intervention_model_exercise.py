@@ -74,22 +74,17 @@ def _candidate():
     return compute_intervention_prob
 
 
-def test_candidate_skipped_when_not_implemented():
-    try:
-        fn = _candidate()
-        # If it doesn't raise, just skip — we can't test shape without real policies
-        pytest.skip("candidate raises NotImplementedError (not implemented yet)")
-    except NotImplementedError:
-        pytest.skip("exercise not yet implemented (blank scaffold)")
+def _fail_if_not_implemented(fn):
+    import inspect
+    src = inspect.getsource(fn)
+    if "NotImplementedError" in src and "raise" in src:
+        pytest.fail("exercise not yet implemented — edit mile_franka/tutorial/intervention_model_exercise.py")
 
 
 def test_candidate_shape_and_range_when_implemented():
     """If the student has implemented compute_intervention_prob, check shape and range."""
-    import inspect
     fn = _candidate()
-    src = inspect.getsource(fn)
-    if "NotImplementedError" in src and "raise" in src:
-        pytest.skip("exercise not yet implemented (blank scaffold)")
+    _fail_if_not_implemented(fn)
 
     from stable_baselines3.common.policies import ActorCriticPolicy
     from imitation.policies.base import NormalizeFeaturesExtractor

@@ -30,10 +30,10 @@ CONTAINER_GUARD = @test -d /home/user/mile-code || { echo "ERROR: Run 'make shel
 
 .PHONY: \
   build up down shell \
-  tutorial-check tutorial-check-loss \
+  tutorial-check tutorial-check-loss tutorial-check-scripted-intervener tutorial-check-intervention-model \
   tutorial-metaworld eval-metaworld \
   tutorial-fake \
-  sim-up sim-gui tutorial-teleop eval-base tutorial-collect-train eval-mile \
+  sim-up sim-gui tutorial-teleop eval-base tutorial-collect-train eval-mile eval-run \
   franka-up apriltag-up eval-real eval-expert-real \
   spacemouse-check joystick-check vive-check pose-test tune-cost \
   real-home-smoke close-gripper open-gripper view-tags view-twin calibrate-camera calibrate-intrinsics franka-shell \
@@ -63,11 +63,17 @@ tutorial-check:              ## assert imports + artifacts are present
 tutorial-check-loss:         ## run tests for the MILE-loss exercise
 	$(DC) exec sim bash -c 'cd /home/user/mile-code && python3 -m pytest tests/test_loss_exercise.py -v'
 
+tutorial-check-scripted-intervener:  ## run tests for the scripted-intervener exercise
+	$(DC) exec sim bash -c 'cd /home/user/mile-code && python3 -m pytest tests/test_scripted_intervener_exercise.py -v'
+
+tutorial-check-intervention-model:  ## run tests for the intervention-model exercise
+	$(DC) exec sim bash -c 'cd /home/user/mile-code && python3 -m pytest tests/test_intervention_model_exercise.py -v'
+
 # ── Tutorial: Part 1 — MetaWorld ──────────────────────────────────────────────
 # Interactive (needs stdin for training output). Run from inside make shell.
 
-tutorial-metaworld:          ## Part 1: MetaWorld peg-insert synthetic loop (uses your loss)
-	$(call RUN,cd scripts && python3 tutorial_train.py --config ../config/tutorial_metaworld.yaml)
+tutorial-metaworld:          ## Part 1: MetaWorld peg-insert synthetic loop (uses your loss); continue a prior run with RESUME=../output_dir
+	$(call RUN,cd scripts && MILE_RESUME_FROM=$(RESUME) python3 tutorial_train.py --config ../config/tutorial_metaworld.yaml)
 
 eval-metaworld:              ## Part 1: evaluate a trained MILE policy on MetaWorld; override MODEL=path/to/dir EPISODES=100
 	$(call RUN,python3 scripts/eval_mile.py \
@@ -109,6 +115,12 @@ eval-mile:                   ## Part 3: evaluate the MILE-trained policy in sim 
 	$(call RUN,python3 scripts/eval_base_policy_sim.py --episodes 5 \
 	  --policy output_dir/franka/policy \
 	  --video_dir output_dir/franka/eval_mile_videos_$(TS))
+
+eval-run:                    ## eval a specific saved run's policy in sim + render one video per episode (for the final round); override POLICY=dir EPISODES=n
+	$(call RUN,python3 scripts/eval_base_policy_sim.py \
+	  --policy $${POLICY:-output_dir/franka/policy} \
+	  --episodes $${EPISODES:-10} \
+	  --video_dir output_dir/franka/eval_run_videos_$(TS))
 
 # ── Tutorial: Part 4 — Real FR3 ───────────────────────────────────────────────
 # All callable from the host via docker exec.

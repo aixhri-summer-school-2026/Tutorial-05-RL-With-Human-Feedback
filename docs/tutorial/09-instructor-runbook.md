@@ -435,7 +435,7 @@ def should_intervene(expert_action: np.ndarray, rollout_action: np.ndarray) -> b
 
 | Task | cost | cdf_scale | Notes |
 |---|---|---|---|
-| `peg-insert-side-v2` | 75 | 200.0 | Dense SAC log-probs; needs large cost to prevent constant intervention |
+| `peg-insert-side-v2` | 75 | 175.0 | Dense SAC log-probs; needs large cost to prevent constant intervention |
 | `Franka-Stack-Sim-v0` | 2 | 2.0 | BC ActorCriticPolicy; log-probs ~[+4,+7], much tighter |
 | `Franka-Stack-Real-v0` | 2 | 2.0 | Same as sim |
 
@@ -666,7 +666,7 @@ A: Yes. Tiers 1–3 are complete on a laptop. Tier 4 is the real-hardware payoff
 - **hucebot controller support:** [hucebot GitHub issues](https://github.com/hucebot/multipanda_ros2)
 - **MILE paper & code:** https://liralab.usc.edu/mile/
 - **Tutorial repo issues:** [GitHub issues](https://github.com/rayray2002/mile-franka-tutorial)
-- **This runbook:** `/home/ray/mile-franka-tutorial/docs/tutorial/06-instructor-runbook.md`
+- **This runbook:** `/home/ray/mile-franka-tutorial/docs/tutorial/09-instructor-runbook.md`
 
 ---
 

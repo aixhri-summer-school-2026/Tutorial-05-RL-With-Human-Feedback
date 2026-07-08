@@ -34,7 +34,7 @@ make tutorial-check    # expected: "tutorial-check OK — you're ready."
 
 ## The tutorial (2 hours)
 
-See [docs/tutorial/03-walkthrough.md](docs/tutorial/03-walkthrough.md) for the full flow. Quick reference:
+The tutorial runs in four parts (one doc each). Quick reference:
 
 | Make verb | What it does |
 |---|---|
@@ -42,23 +42,28 @@ See [docs/tutorial/03-walkthrough.md](docs/tutorial/03-walkthrough.md) for the f
 | `make tutorial-check-scripted-intervener` | Test Exercise 1 (scripted intervener rule) |
 | `make tutorial-check-loss` | Test Exercise 2 (MILE loss) |
 | `make tutorial-check-intervention-model` | Test Exercise 3 (intervention model) |
-| `make tutorial-metaworld` | Part 1: MetaWorld peg-insert with synthetic expert |
+| `make tutorial-metaworld` | Part 1: MetaWorld peg-insert with synthetic expert (`RESUME=../output_dir` to continue) |
 | `make tutorial-fake` | Part 2: Franka fake backend smoke test |
 | `make sim-up` | Start the multipanda MuJoCo stacking sim |
 | `make tutorial-teleop` | Part 3 practice: free-play keyboard teleop (no data saved) |
 | `make eval-base` | Evaluate the base policy (run before training) |
 | `make tutorial-collect-train` | Part 3: keyboard teleop → collect → train |
 | `make eval-mile` | Evaluate the MILE-trained policy (run after training) |
+| `make eval-run` | Eval a specific run + render one video/episode (`POLICY=`, `EPISODES=`) |
 
 **Docs:**
 - [00-setup.md](docs/tutorial/00-setup.md) — pre-session setup (homework)
 - [01-concepts.md](docs/tutorial/01-concepts.md) — 5-min MILE primer
-- [03-walkthrough.md](docs/tutorial/03-walkthrough.md) — full tutorial flow (start here on session day)
 - [02a-scripted-intervener.md](docs/tutorial/02a-scripted-intervener.md) — Exercise 1: scripted intervener
 - [02b-loss-exercise.md](docs/tutorial/02b-loss-exercise.md) — Exercise 2: implement the MILE loss
 - [02c-intervention-model.md](docs/tutorial/02c-intervention-model.md) — Exercise 3: design the intervention model
-- [04-teleop.md](docs/tutorial/04-teleop.md) — keyboard / gamepad reference
-- [05-troubleshooting.md](docs/tutorial/05-troubleshooting.md) — FAQ
+- [03-metaworld.md](docs/tutorial/03-metaworld.md) — **Part 1:** MILE on MetaWorld (start here on session day)
+- [04-franka-fake.md](docs/tutorial/04-franka-fake.md) — **Part 2:** Franka env smoke test
+- [05-franka-sim.md](docs/tutorial/05-franka-sim.md) — **Part 3:** MILE on the Franka sim (you are the human)
+- [06-franka-real.md](docs/tutorial/06-franka-real.md) — **Part 4:** MILE on the real FR3
+- [07-teleop.md](docs/tutorial/07-teleop.md) — keyboard / gamepad reference
+- [08-troubleshooting.md](docs/tutorial/08-troubleshooting.md) — FAQ
+- [09-instructor-runbook.md](docs/tutorial/09-instructor-runbook.md) — instructor reference
 
 ---
 

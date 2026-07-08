@@ -25,7 +25,7 @@ def _skip_if_not_implemented(fn):
     import inspect
     src = inspect.getsource(fn)
     if "raise NotImplementedError" in src:
-        pytest.skip("exercise not yet implemented (blank scaffold)")
+        pytest.fail("exercise not yet implemented — edit mile_franka/tutorial/scripted_intervener_exercise.py")
 
 
 # ── reference solution ───────────────────────────────────────────────────────

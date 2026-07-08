@@ -145,4 +145,4 @@ Switch devices by editing the config and restarting the collector.
 
 ## Next steps
 
-→ **[05-troubleshooting.md](05-troubleshooting.md)**: Stuck? Find solutions here.
+→ **[08-troubleshooting.md](08-troubleshooting.md)**: Stuck? Find solutions here.

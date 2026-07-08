@@ -54,6 +54,45 @@ def _features_extractor_class(env_name):
     return NormalizeFeaturesExtractor
 
 
+def _load_resume_state(resume_from, config):
+    """Continue an iterative run from a previous run directory.
+
+    Returns (policy, mental_model, dataset, start_round). `dataset` is the latest
+    accumulated dataset found in `resume_from` (as numpy arrays), or None; `start_round`
+    is one past the highest saved round so filenames/logging don't clobber prior rounds.
+    """
+    import glob
+    import re
+
+    ptype = config['experiment']['policy_type']
+    policy_path = os.path.join(resume_from, 'policy')
+    if ptype == 'sac':
+        policy = SACPolicy.load(policy_path)
+    elif ptype == 'qnetwork':
+        policy = QNetwork.load(policy_path)
+    else:
+        policy = ActorCriticPolicy.load(policy_path)
+
+    mm_path = os.path.join(resume_from, 'mental_model')
+    if config['experiment']['mental_model_type'] == 'qnetwork':
+        mental_model = QNetwork.load(mm_path)
+    else:
+        mental_model = ActorCriticPolicy.load(mm_path)
+
+    def _round_num(path):
+        m = re.search(r'round(\d+)\.pkl$', path)
+        return int(m.group(1)) if m else -1
+
+    dataset, start_round = None, 0
+    files = glob.glob(os.path.join(resume_from, 'accumulated_dataset_round*.pkl'))
+    if files:
+        latest = max(files, key=_round_num)
+        with open(latest, 'rb') as f:
+            dataset = {k: np.array(v) for k, v in pickle.load(f).items()}
+        start_round = _round_num(latest) + 1
+    return policy, mental_model, dataset, start_round
+
+
 def build_franka_or_metaworld_env(env_name):
     """Build the wrapped (FrameStack+Flatten) training env for either backend."""
     if env_name + '-goal-observable' in ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE:
@@ -216,6 +255,18 @@ def iterative_training(config):
     if config['experiment']['use_warm_start']:
         mental_model = ActorCriticPolicy.load(config['experiment']['warm_start_path'])
 
+    # Resume: continue from a previous run's saved policy / mental_model / dataset instead
+    # of starting over. Set experiment.resume_from to a run dir (e.g. output_dir).
+    resume_from = config['experiment'].get('resume_from')
+    resume_dataset, resume_start_round = None, 0
+    if resume_from:
+        policy, mental_model, resume_dataset, resume_start_round = _load_resume_state(resume_from, config)
+        policy.to(device)
+        mental_model.to(device)
+        _n = 0 if resume_dataset is None else len(resume_dataset['state'])
+        print(f"[resume] continuing from '{resume_from}' at round {resume_start_round} "
+              f"({_n} prior transitions)")
+
     print(config)
     now = datetime.datetime.now()
     timestamp = now.strftime("%Y-%m-%d-%H-%M-%S-%f")
@@ -285,9 +336,11 @@ def iterative_training(config):
         else:
             raise ValueError(f'Unknown intervener: {which}')
 
-    if config['experiment']['include_offline_dataset']:
+    if resume_dataset is not None:
+        dataset = resume_dataset
+    elif config['experiment']['include_offline_dataset']:
         with open(config['experiment']['offline_dataset_path'], 'rb') as f:
-            dataset = pickle.load(f)    
+            dataset = pickle.load(f)
     else:
         if isinstance(env.action_space, gym.spaces.Box):
             dataset = dict(state=[], 
@@ -308,7 +361,7 @@ def iterative_training(config):
                     reward=[], 
                     done=[])
 
-    for round in range(num_rounds):
+    for round in range(resume_start_round, resume_start_round + num_rounds):
         log_to_file('Round: {}'.format(round), EXPERIMENT_NAME+'_log.txt')
         print('Collecting intervention data...')
         if collector_type == 'real':
@@ -337,7 +390,7 @@ def iterative_training(config):
         log_to_file(f'Saved round data -> {round_data_path}', EXPERIMENT_NAME+'_log.txt')
 
         for key in dataset.keys():
-            if round == 0:
+            if len(dataset[key]) == 0:
                 dataset[key].extend(additional_data[key])
             else:
                 dataset[key] = np.concatenate((dataset[key], additional_data[key]), axis=0)
@@ -364,6 +417,9 @@ def main():
     parser.add_argument('--config', type=str, default='config/metaworld.yaml', help='Path to the config file')
     args = parser.parse_args()
     config = read_config(args.config)
+    # CLI/env override for resume (e.g. make tutorial-metaworld RESUME=../output_dir).
+    if os.environ.get('MILE_RESUME_FROM'):
+        config['experiment']['resume_from'] = os.environ['MILE_RESUME_FROM']
     if config['experiment']['save']['enabled']:
         os.makedirs(config['experiment']['save']['outdir'], exist_ok=True)
 
